@@ -1,7 +1,10 @@
 package application
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,13 +28,14 @@ type registration struct {
 }
 
 type Service struct {
-	mu        sync.RWMutex
-	tools     map[string]registration
-	logs      []toolDomain.CallLog
-	alerts    *alertApp.Service
-	retrieval *retrieval.Service
-	sessions  *sessionApp.Service
-	knowledge *knowledgeApp.Service
+	mu          sync.RWMutex
+	tools       map[string]registration
+	logs        []toolDomain.CallLog
+	alerts      *alertApp.Service
+	retrieval   *retrieval.Service
+	sessions    *sessionApp.Service
+	knowledge   *knowledgeApp.Service
+	storagePath string
 }
 
 func NewService(
@@ -41,13 +45,15 @@ func NewService(
 	knowledgeService *knowledgeApp.Service,
 ) *Service {
 	service := &Service{
-		tools:     make(map[string]registration),
-		logs:      make([]toolDomain.CallLog, 0, 32),
-		alerts:    alertService,
-		retrieval: retrievalService,
-		sessions:  sessionService,
-		knowledge: knowledgeService,
+		tools:       make(map[string]registration),
+		logs:        make([]toolDomain.CallLog, 0, 32),
+		alerts:      alertService,
+		retrieval:   retrievalService,
+		sessions:    sessionService,
+		knowledge:   knowledgeService,
+		storagePath: filepath.Join("tmp", "tools", "call-logs.json"),
 	}
+	service.load()
 
 	service.register(toolDomain.Tool{
 		Name:         "service_status",
@@ -194,7 +200,7 @@ func (s *Service) CallTool(user authDomain.User, toolName string, params map[str
 	return output, nil
 }
 
-func (s *Service) ListLogs(toolName string, limit int) []toolDomain.CallLog {
+func (s *Service) ListLogs(toolName, status string, limit int) []toolDomain.CallLog {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -205,6 +211,9 @@ func (s *Service) ListLogs(toolName string, limit int) []toolDomain.CallLog {
 	items := make([]toolDomain.CallLog, 0, len(s.logs))
 	for _, log := range s.logs {
 		if toolName != "" && log.ToolName != toolName {
+			continue
+		}
+		if status != "" && log.Status != status {
 			continue
 		}
 		items = append(items, log)
@@ -223,13 +232,15 @@ func (s *Service) appendLog(entry toolDomain.CallLog) {
 	if len(s.logs) > 200 {
 		s.logs = s.logs[:200]
 	}
+	s.persistLocked()
 }
 
 func (s *Service) executeServiceStatus(_ authDomain.User, params map[string]any) (any, error) {
 	serviceName := strings.TrimSpace(asString(params["service"]))
 	environment := strings.TrimSpace(asString(params["environment"]))
-	alerts := s.alerts.ListAlerts("", "", serviceName)
+	alerts := s.alerts.ListAlerts("", "", serviceName, "")
 
+	totalAlerts := 0
 	activeAlerts := 0
 	highestSeverity := ""
 	latestSummary := ""
@@ -237,6 +248,7 @@ func (s *Service) executeServiceStatus(_ authDomain.User, params map[string]any)
 		if environment != "" && alert.Environment != environment {
 			continue
 		}
+		totalAlerts++
 		if alert.Status != "resolved" {
 			activeAlerts++
 		}
@@ -259,7 +271,7 @@ func (s *Service) executeServiceStatus(_ authDomain.User, params map[string]any)
 	return map[string]any{
 		"service":          serviceName,
 		"environment":      fallback(environment, "all"),
-		"total_alerts":     len(alerts),
+		"total_alerts":     totalAlerts,
 		"active_alerts":    activeAlerts,
 		"highest_severity": fallback(highestSeverity, "none"),
 		"latest_summary":   fallback(latestSummary, "暂无相关告警"),
@@ -275,7 +287,7 @@ func (s *Service) executeRecentAlerts(_ authDomain.User, params map[string]any) 
 		limit = 5
 	}
 
-	items := s.alerts.ListAlerts(status, "", serviceName)
+	items := s.alerts.ListAlerts(status, "", serviceName, "")
 	if len(items) > limit {
 		items = items[:limit]
 	}
@@ -293,16 +305,14 @@ func (s *Service) executeKnowledgeSearch(user authDomain.User, params map[string
 		limit = 3
 	}
 
-	references := s.retrieval.Retrieve(user, query, limit)
-	return map[string]any{
-		"query":      query,
-		"answer":     retrieval.BuildAnswer(query, references),
-		"references": references,
-	}, nil
+	report := s.retrieval.RetrieveWithOptions(user, query, retrieval.RetrieveOptions{
+		Limit: limit,
+	})
+	return report, nil
 }
 
 func (s *Service) executePlatformOverview(user authDomain.User, _ map[string]any) (any, error) {
-	alerts := s.alerts.ListAlerts("", "", "")
+	alerts := s.alerts.ListAlerts("", "", "", "")
 	openAlerts := 0
 	for _, alert := range alerts {
 		if alert.Status != "resolved" {
@@ -455,4 +465,25 @@ func fallback(value, fallbackValue string) string {
 
 func nextID(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+}
+
+func (s *Service) load() {
+	data, err := os.ReadFile(s.storagePath)
+	if err != nil {
+		return
+	}
+	var logs []toolDomain.CallLog
+	if err := json.Unmarshal(data, &logs); err != nil {
+		return
+	}
+	s.logs = logs
+}
+
+func (s *Service) persistLocked() {
+	_ = os.MkdirAll(filepath.Dir(s.storagePath), 0o755)
+	payload, err := json.MarshalIndent(s.logs, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(s.storagePath, payload, 0o644)
 }

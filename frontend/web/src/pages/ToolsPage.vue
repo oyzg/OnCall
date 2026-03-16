@@ -9,9 +9,25 @@
         <el-button plain @click="loadTools">刷新</el-button>
       </div>
 
-      <div v-if="tools.length" class="tool-list">
+      <div class="tool-filters">
+        <el-input
+          v-model="toolFilters.query"
+          clearable
+          placeholder="按工具名搜索"
+        />
+        <el-select v-model="toolFilters.category" clearable placeholder="全部分类">
+          <el-option
+            v-for="category in categories"
+            :key="category"
+            :label="category"
+            :value="category"
+          />
+        </el-select>
+      </div>
+
+      <div v-if="filteredTools.length" class="tool-list">
         <button
-          v-for="tool in tools"
+          v-for="tool in filteredTools"
           :key="tool.name"
           type="button"
           :class="['tool-item', { active: tool.name === selectedToolName }]"
@@ -92,6 +108,11 @@
             <h3>调用结果</h3>
             <small v-if="selectedTool.available">统一协议返回，便于后续接入 Agent。</small>
           </div>
+          <div v-if="lastCallMeta" class="tool-result__meta">
+            <span>执行状态：{{ lastCallMeta.status }}</span>
+            <span>耗时：{{ lastCallMeta.duration_ms }} ms</span>
+            <span>时间：{{ formatTime(lastCallMeta.created_at) }}</span>
+          </div>
           <el-empty v-if="!callResult" description="执行工具后，这里会展示返回结果。" />
           <pre v-else>{{ formattedResult }}</pre>
         </div>
@@ -103,6 +124,14 @@
         <div>
           <h2>调用记录</h2>
           <p>查看工具执行结果、耗时与失败原因。</p>
+        </div>
+        <div class="log-filters">
+          <el-select v-model="logFilters.status" clearable placeholder="全部状态" @change="loadLogs">
+            <el-option label="success" value="success" />
+            <el-option label="failed" value="failed" />
+            <el-option label="forbidden" value="forbidden" />
+          </el-select>
+          <el-button plain @click="loadLogs">刷新记录</el-button>
         </div>
       </div>
 
@@ -153,11 +182,36 @@ const fieldValues = ref<Record<string, string | number>>({});
 const callResult = ref<unknown>(null);
 const logs = ref<ToolCallLog[]>([]);
 const calling = ref(false);
+const toolFilters = ref({
+  query: "",
+  category: "",
+});
+const logFilters = ref({
+  status: "",
+});
 
 const selectedTool = computed(
   () => tools.value.find((tool) => tool.name === selectedToolName.value) || null
 );
+const filteredTools = computed(() =>
+  tools.value.filter((tool) => {
+    if (toolFilters.value.category && tool.category !== toolFilters.value.category) {
+      return false;
+    }
+    if (!toolFilters.value.query.trim()) {
+      return true;
+    }
+    const query = toolFilters.value.query.trim().toLowerCase();
+    return (
+      tool.display_name.toLowerCase().includes(query) ||
+      tool.name.toLowerCase().includes(query) ||
+      tool.description.toLowerCase().includes(query)
+    );
+  })
+);
+const categories = computed(() => Array.from(new Set(tools.value.map((tool) => tool.category))));
 const formattedResult = computed(() => JSON.stringify(callResult.value, null, 2));
+const lastCallMeta = computed(() => logs.value[0] || null);
 
 onMounted(async () => {
   await loadTools();
@@ -195,6 +249,7 @@ async function loadLogs() {
   const result = await fetchToolLogs({
     limit: 12,
     tool_name: selectedToolName.value || undefined,
+    status: logFilters.value.status || undefined,
   });
   logs.value = result.data.logs;
 }
@@ -313,6 +368,17 @@ function formatTime(value: string) {
   margin-top: 20px;
 }
 
+.tool-filters,
+.log-filters,
+.tool-result__meta {
+  display: flex;
+  gap: 12px;
+}
+
+.tool-filters {
+  margin-top: 16px;
+}
+
 .tool-item {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -410,6 +476,19 @@ function formatTime(value: string) {
   margin-bottom: 14px;
 }
 
+.tool-result__meta {
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.tool-result__meta span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.75);
+  color: #475569;
+  font-size: 12px;
+}
+
 .tool-result pre {
   margin: 0;
   padding: 16px;
@@ -440,6 +519,12 @@ function formatTime(value: string) {
 @media (max-width: 1100px) {
   .tools-page {
     grid-template-columns: 1fr;
+  }
+
+  .tool-filters,
+  .log-filters {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .tool-form {

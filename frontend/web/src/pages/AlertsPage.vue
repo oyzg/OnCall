@@ -23,6 +23,30 @@
           <el-option label="P3" value="P3" />
         </el-select>
         <el-input v-model="filters.service" placeholder="按服务筛选" @keyup.enter="loadAlerts" />
+        <el-input v-model="filters.query" placeholder="按标题/摘要搜索" @keyup.enter="loadAlerts" />
+      </div>
+
+      <div class="stats-row">
+        <article class="stat-card">
+          <strong>{{ stats.total }}</strong>
+          <span>总告警</span>
+        </article>
+        <article class="stat-card">
+          <strong>{{ stats.open }}</strong>
+          <span>待处理</span>
+        </article>
+        <article class="stat-card">
+          <strong>{{ stats.investigating }}</strong>
+          <span>排查中</span>
+        </article>
+        <article class="stat-card">
+          <strong>{{ stats.linked_sessions }}</strong>
+          <span>已关联会话</span>
+        </article>
+        <article class="stat-card">
+          <strong>{{ stats.deduplicated_hit }}</strong>
+          <span>去重合并次数</span>
+        </article>
       </div>
     </section>
 
@@ -40,6 +64,11 @@
           <el-table-column label="状态" width="140">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.status)">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="次数" width="90">
+            <template #default="{ row }">
+              {{ row.occurrence_count }}
             </template>
           </el-table-column>
           <el-table-column prop="source" label="来源" width="130" />
@@ -77,11 +106,21 @@
             <el-descriptions-item label="状态">{{ activeAlert.status }}</el-descriptions-item>
             <el-descriptions-item label="来源">{{ activeAlert.source }}</el-descriptions-item>
             <el-descriptions-item label="触发时间">{{ formatTime(activeAlert.triggered_at) }}</el-descriptions-item>
+            <el-descriptions-item label="最近触发">{{ formatTime(activeAlert.last_triggered_at) }}</el-descriptions-item>
+            <el-descriptions-item label="触发次数">{{ activeAlert.occurrence_count }}</el-descriptions-item>
             <el-descriptions-item label="关联会话" :span="2">
               {{ activeAlert.linked_session_id || "尚未关联" }}
             </el-descriptions-item>
             <el-descriptions-item label="描述" :span="2">
               {{ activeAlert.description || "暂无详细描述" }}
+            </el-descriptions-item>
+            <el-descriptions-item label="标签" :span="2">
+              <div v-if="labelEntries.length" class="labels-list">
+                <el-tag v-for="[key, value] in labelEntries" :key="key" size="small">
+                  {{ key }}={{ value }}
+                </el-tag>
+              </div>
+              <span v-else>暂无标签</span>
             </el-descriptions-item>
           </el-descriptions>
 
@@ -126,7 +165,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
 
@@ -137,21 +176,33 @@ import {
   updateAlertStatus,
   type AlertItem,
   type AlertRecord,
+  type AlertStats,
 } from "@/services/api";
 
 const router = useRouter();
 const alerts = ref<AlertItem[]>([]);
 const activeAlert = ref<AlertItem | null>(null);
 const alertRecords = ref<AlertRecord[]>([]);
+const stats = ref<AlertStats>({
+  total: 0,
+  open: 0,
+  investigating: 0,
+  resolved: 0,
+  by_severity: { P0: 0, P1: 0, P2: 0, P3: 0 },
+  linked_sessions: 0,
+  deduplicated_hit: 0,
+});
 const updatingStatus = ref(false);
 const linkingSession = ref(false);
 const nextStatus = ref("");
 const statusComment = ref("");
+const labelEntries = computed(() => Object.entries(activeAlert.value?.labels || {}));
 
 const filters = reactive({
   status: "",
   severity: "",
   service: "",
+  query: "",
 });
 
 onMounted(async () => {
@@ -163,8 +214,10 @@ async function loadAlerts() {
     status: filters.status || undefined,
     severity: filters.severity || undefined,
     service: filters.service.trim() || undefined,
+    query: filters.query.trim() || undefined,
   });
   alerts.value = result.data.alerts;
+  stats.value = result.data.stats;
 
   if (!activeAlert.value && alerts.value.length > 0) {
     await handleSelectAlert(alerts.value[0]);
@@ -318,6 +371,29 @@ function formatTime(value: string) {
   margin-top: 20px;
 }
 
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.stat-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.stat-card strong {
+  display: block;
+  font-size: 24px;
+}
+
+.stat-card span {
+  color: #64748b;
+  font-size: 13px;
+}
+
 .alerts-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(380px, 0.9fr);
@@ -334,6 +410,12 @@ function formatTime(value: string) {
 
 .detail-descriptions {
   margin-top: 20px;
+}
+
+.labels-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .status-panel {
@@ -353,6 +435,7 @@ function formatTime(value: string) {
 }
 
 @media (max-width: 1200px) {
+  .stats-row,
   .alerts-layout {
     grid-template-columns: 1fr;
   }

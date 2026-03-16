@@ -63,8 +63,18 @@ func (h *Handler) ListAlerts(c *gin.Context) {
 		strings.TrimSpace(c.Query("status")),
 		strings.TrimSpace(c.Query("severity")),
 		strings.TrimSpace(c.Query("service")),
+		strings.TrimSpace(c.Query("query")),
 	)
-	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"alerts": items})
+	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
+		"alerts": items,
+		"stats":  h.service.BuildStats(),
+	})
+}
+
+func (h *Handler) Stats(c *gin.Context) {
+	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
+		"stats": h.service.BuildStats(),
+	})
 }
 
 func (h *Handler) GetDetail(c *gin.Context) {

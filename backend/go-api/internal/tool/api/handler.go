@@ -76,7 +76,11 @@ func (h *Handler) ListLogs(c *gin.Context) {
 	_ = user
 	limit, _ := strconv.Atoi(strings.TrimSpace(c.Query("limit")))
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
-		"logs": h.service.ListLogs(strings.TrimSpace(c.Query("tool_name")), limit),
+		"logs": h.service.ListLogs(
+			strings.TrimSpace(c.Query("tool_name")),
+			strings.TrimSpace(c.Query("status")),
+			limit,
+		),
 	})
 }
 

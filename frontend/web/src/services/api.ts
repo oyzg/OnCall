@@ -119,9 +119,11 @@ export interface AlertItem {
   description: string;
   labels?: Record<string, string>;
   linked_session_id?: string;
+  occurrence_count: number;
   created_at: string;
   updated_at: string;
   triggered_at: string;
+  last_triggered_at: string;
 }
 
 export interface AlertRecord {
@@ -131,6 +133,16 @@ export interface AlertRecord {
   operator: string;
   comment: string;
   created_at: string;
+}
+
+export interface AlertStats {
+  total: number;
+  open: number;
+  investigating: number;
+  resolved: number;
+  by_severity: Record<string, number>;
+  linked_sessions: number;
+  deduplicated_hit: number;
 }
 
 export interface ToolParameter {
@@ -382,8 +394,13 @@ export async function retrieveKnowledge(payload: { query: string; category?: str
   return response.data;
 }
 
-export async function fetchAlerts(params?: { status?: string; severity?: string; service?: string }) {
-  const response = await http.get<ApiEnvelope<{ alerts: AlertItem[] }>>("/api/v1/alerts", { params });
+export async function fetchAlerts(params?: { status?: string; severity?: string; service?: string; query?: string }) {
+  const response = await http.get<ApiEnvelope<{ alerts: AlertItem[]; stats: AlertStats }>>("/api/v1/alerts", { params });
+  return response.data;
+}
+
+export async function fetchAlertStats() {
+  const response = await http.get<ApiEnvelope<{ stats: AlertStats }>>("/api/v1/alerts/stats");
   return response.data;
 }
 
@@ -421,7 +438,7 @@ export async function callTool(toolName: string, parameters: Record<string, stri
   return response.data;
 }
 
-export async function fetchToolLogs(params?: { tool_name?: string; limit?: number }) {
+export async function fetchToolLogs(params?: { tool_name?: string; status?: string; limit?: number }) {
   const response = await http.get<ApiEnvelope<{ logs: ToolCallLog[] }>>("/api/v1/tools/logs", {
     params,
   });

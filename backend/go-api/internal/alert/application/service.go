@@ -1,7 +1,10 @@
 package application
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -29,29 +32,56 @@ type UpdateStatusInput struct {
 	Comment string
 }
 
+type Stats struct {
+	Total           int            `json:"total"`
+	Open            int            `json:"open"`
+	Investigating   int            `json:"investigating"`
+	Resolved        int            `json:"resolved"`
+	BySeverity      map[string]int `json:"by_severity"`
+	LinkedSessions  int            `json:"linked_sessions"`
+	DeduplicatedHit int            `json:"deduplicated_hit"`
+}
+
 type Detail struct {
 	Alert   alertDomain.Alert            `json:"alert"`
 	Records []alertDomain.HandlingRecord `json:"records"`
+	Stats   Stats                        `json:"stats,omitempty"`
 }
 
 type Service struct {
-	mu         sync.RWMutex
-	alerts     map[string]alertDomain.Alert
-	records    map[string][]alertDomain.HandlingRecord
-	sessionSvc *sessionApp.Service
-	seedOnce   sync.Once
+	mu          sync.RWMutex
+	alerts      map[string]alertDomain.Alert
+	records     map[string][]alertDomain.HandlingRecord
+	sessionSvc  *sessionApp.Service
+	seedOnce    sync.Once
+	storagePath string
+}
+
+type store struct {
+	Alerts  map[string]alertDomain.Alert            `json:"alerts"`
+	Records map[string][]alertDomain.HandlingRecord `json:"records"`
 }
 
 func NewService(sessionSvc *sessionApp.Service) *Service {
-	return &Service{
-		alerts:     make(map[string]alertDomain.Alert),
-		records:    make(map[string][]alertDomain.HandlingRecord),
-		sessionSvc: sessionSvc,
+	service := &Service{
+		alerts:      make(map[string]alertDomain.Alert),
+		records:     make(map[string][]alertDomain.HandlingRecord),
+		sessionSvc:  sessionSvc,
+		storagePath: filepath.Join("tmp", "alerts", "alerts.json"),
 	}
+	service.load()
+	return service
 }
 
 func (s *Service) EnsureSeeded() {
 	s.seedOnce.Do(func() {
+		s.mu.RLock()
+		alreadySeeded := len(s.alerts) > 0
+		s.mu.RUnlock()
+		if alreadySeeded {
+			return
+		}
+
 		now := time.Now()
 		s.mustIngest(IngestInput{
 			Title:       "payment-api p95 latency spike",
@@ -87,14 +117,18 @@ func (s *Service) EnsureSeeded() {
 func (s *Service) Ingest(input IngestInput) alertDomain.Alert {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.ingestLocked(input)
+
+	alert := s.ingestLocked(input)
+	s.persistLocked()
+	return alert
 }
 
-func (s *Service) ListAlerts(status, severity, service string) []alertDomain.Alert {
+func (s *Service) ListAlerts(status, severity, service, query string) []alertDomain.Alert {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	items := make([]alertDomain.Alert, 0)
+	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	for _, alert := range s.alerts {
 		if status != "" && alert.Status != status {
 			continue
@@ -105,13 +139,28 @@ func (s *Service) ListAlerts(status, severity, service string) []alertDomain.Ale
 		if service != "" && !strings.EqualFold(alert.Service, service) {
 			continue
 		}
+		if normalizedQuery != "" &&
+			!strings.Contains(strings.ToLower(alert.Title), normalizedQuery) &&
+			!strings.Contains(strings.ToLower(alert.Summary), normalizedQuery) &&
+			!strings.Contains(strings.ToLower(alert.Description), normalizedQuery) {
+			continue
+		}
 		items = append(items, alert)
 	}
 
 	sort.Slice(items, func(i, j int) bool {
+		if items[i].TriggeredAt.Equal(items[j].TriggeredAt) {
+			return items[i].UpdatedAt.After(items[j].UpdatedAt)
+		}
 		return items[i].TriggeredAt.After(items[j].TriggeredAt)
 	})
 	return items
+}
+
+func (s *Service) BuildStats() Stats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.statsLocked()
 }
 
 func (s *Service) GetDetail(alertID string) (Detail, bool) {
@@ -131,6 +180,7 @@ func (s *Service) GetDetail(alertID string) (Detail, bool) {
 	return Detail{
 		Alert:   alert,
 		Records: records,
+		Stats:   s.statsLocked(),
 	}, true
 }
 
@@ -155,6 +205,7 @@ func (s *Service) UpdateStatus(user authDomain.User, alertID string, input Updat
 		Comment:   buildStatusComment(alert.Status, input.Comment),
 		CreatedAt: now,
 	})
+	s.persistLocked()
 
 	return s.detailLocked(alertID), true
 }
@@ -181,6 +232,7 @@ func (s *Service) LinkSession(user authDomain.User, alertID string) (Detail, boo
 			Comment:   "已创建排障会话并关联到当前告警。",
 			CreatedAt: time.Now(),
 		})
+		s.persistLocked()
 	}
 
 	return s.detailLocked(alertID), true
@@ -189,7 +241,9 @@ func (s *Service) LinkSession(user authDomain.User, alertID string) (Detail, boo
 func (s *Service) mustIngest(input IngestInput) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.ingestLocked(input)
+	s.persistLocked()
 }
 
 func (s *Service) ingestLocked(input IngestInput) alertDomain.Alert {
@@ -199,33 +253,57 @@ func (s *Service) ingestLocked(input IngestInput) alertDomain.Alert {
 		triggeredAt = *input.TriggeredAt
 	}
 
-	alert := alertDomain.Alert{
-		ID:          nextID("alert"),
-		Title:       normalizeTitle(input.Title),
-		Service:     normalizeFallback(input.Service, "unknown-service"),
-		Environment: normalizeFallback(input.Environment, "prod"),
-		Severity:    normalizeSeverity(input.Severity),
-		Source:      normalizeFallback(input.Source, "external"),
-		Status:      "open",
-		Summary:     normalizeFallback(input.Summary, "未提供摘要"),
-		Description: strings.TrimSpace(input.Description),
-		Labels:      input.Labels,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		TriggeredAt: triggeredAt,
+	normalized := alertDomain.Alert{
+		ID:              nextID("alert"),
+		Title:           normalizeTitle(input.Title),
+		Service:         normalizeFallback(input.Service, "unknown-service"),
+		Environment:     normalizeFallback(input.Environment, "prod"),
+		Severity:        normalizeSeverity(input.Severity),
+		Source:          normalizeFallback(input.Source, "external"),
+		Status:          "open",
+		Summary:         normalizeFallback(input.Summary, "未提供摘要"),
+		Description:     strings.TrimSpace(input.Description),
+		Labels:          cloneLabels(input.Labels),
+		OccurrenceCount: 1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		TriggeredAt:     triggeredAt,
+		LastTriggeredAt: triggeredAt,
 	}
 
-	s.alerts[alert.ID] = alert
-	s.records[alert.ID] = append(s.records[alert.ID], alertDomain.HandlingRecord{
+	if existingID, ok := s.findDuplicateAlertID(normalized); ok {
+		existing := s.alerts[existingID]
+		existing.Severity = maxSeverity(existing.Severity, normalized.Severity)
+		existing.Summary = normalized.Summary
+		existing.Description = normalized.Description
+		existing.Labels = mergeLabels(existing.Labels, normalized.Labels)
+		existing.Status = "open"
+		existing.UpdatedAt = now
+		existing.LastTriggeredAt = triggeredAt
+		existing.OccurrenceCount++
+		s.alerts[existingID] = existing
+		s.records[existingID] = append(s.records[existingID], alertDomain.HandlingRecord{
+			ID:        nextID("record"),
+			AlertID:   existingID,
+			Action:    "deduplicate_ingest",
+			Operator:  existing.Source,
+			Comment:   "重复告警已合并到现有事件。",
+			CreatedAt: now,
+		})
+		return existing
+	}
+
+	s.alerts[normalized.ID] = normalized
+	s.records[normalized.ID] = append(s.records[normalized.ID], alertDomain.HandlingRecord{
 		ID:        nextID("record"),
-		AlertID:   alert.ID,
+		AlertID:   normalized.ID,
 		Action:    "ingest",
-		Operator:  alert.Source,
+		Operator:  normalized.Source,
 		Comment:   "告警已接入平台。",
 		CreatedAt: now,
 	})
 
-	return alert
+	return normalized
 }
 
 func (s *Service) detailLocked(alertID string) Detail {
@@ -234,7 +312,94 @@ func (s *Service) detailLocked(alertID string) Detail {
 	sort.Slice(records, func(i, j int) bool {
 		return records[i].CreatedAt.After(records[j].CreatedAt)
 	})
-	return Detail{Alert: alert, Records: records}
+	return Detail{
+		Alert:   alert,
+		Records: records,
+		Stats:   s.statsLocked(),
+	}
+}
+
+func (s *Service) statsLocked() Stats {
+	stats := Stats{
+		BySeverity: map[string]int{
+			"P0": 0,
+			"P1": 0,
+			"P2": 0,
+			"P3": 0,
+		},
+	}
+
+	for _, alert := range s.alerts {
+		stats.Total++
+		stats.BySeverity[alert.Severity]++
+		if alert.LinkedSessionID != "" {
+			stats.LinkedSessions++
+		}
+		if alert.OccurrenceCount > 1 {
+			stats.DeduplicatedHit += alert.OccurrenceCount - 1
+		}
+		switch alert.Status {
+		case "resolved":
+			stats.Resolved++
+		case "investigating":
+			stats.Investigating++
+		default:
+			stats.Open++
+		}
+	}
+	return stats
+}
+
+func (s *Service) findDuplicateAlertID(candidate alertDomain.Alert) (string, bool) {
+	for id, alert := range s.alerts {
+		if alert.Service != candidate.Service {
+			continue
+		}
+		if alert.Environment != candidate.Environment {
+			continue
+		}
+		if alert.Source != candidate.Source {
+			continue
+		}
+		if alert.Title != candidate.Title {
+			continue
+		}
+		if alert.Status == "resolved" {
+			continue
+		}
+		return id, true
+	}
+	return "", false
+}
+
+func (s *Service) load() {
+	data, err := os.ReadFile(s.storagePath)
+	if err != nil {
+		return
+	}
+
+	var stored store
+	if err := json.Unmarshal(data, &stored); err != nil {
+		return
+	}
+	if stored.Alerts != nil {
+		s.alerts = stored.Alerts
+	}
+	if stored.Records != nil {
+		s.records = stored.Records
+	}
+}
+
+func (s *Service) persistLocked() {
+	_ = os.MkdirAll(filepath.Dir(s.storagePath), 0o755)
+	payload, err := json.MarshalIndent(store{
+		Alerts:  s.alerts,
+		Records: s.records,
+	}, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(s.storagePath, payload, 0o644)
 }
 
 func normalizeTitle(title string) string {
@@ -283,6 +448,53 @@ func displayOperator(user authDomain.User) string {
 		return user.DisplayName
 	}
 	return user.Username
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(labels))
+	for key, value := range labels {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func mergeLabels(origin, incoming map[string]string) map[string]string {
+	if len(origin) == 0 && len(incoming) == 0 {
+		return nil
+	}
+	merged := cloneLabels(origin)
+	if merged == nil {
+		merged = map[string]string{}
+	}
+	for key, value := range incoming {
+		merged[key] = value
+	}
+	return merged
+}
+
+func maxSeverity(left, right string) string {
+	if severityRank(left) <= severityRank(right) {
+		return left
+	}
+	return right
+}
+
+func severityRank(severity string) int {
+	switch severity {
+	case "P0":
+		return 0
+	case "P1":
+		return 1
+	case "P2":
+		return 2
+	case "P3":
+		return 3
+	default:
+		return 99
+	}
 }
 
 func nextID(prefix string) string {

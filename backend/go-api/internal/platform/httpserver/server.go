@@ -108,6 +108,7 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	alertGroup := router.Group("/api/v1/alerts")
 	alertGroup.Use(middleware.Auth(authService))
 	alertGroup.GET("", alertHandler.ListAlerts)
+	alertGroup.GET("/stats", alertHandler.Stats)
 	alertGroup.GET("/:alertID", alertHandler.GetDetail)
 	alertGroup.POST("/:alertID/status", alertHandler.UpdateStatus)
 	alertGroup.POST("/:alertID/session", alertHandler.LinkSession)
