@@ -90,6 +90,9 @@ router.beforeEach((to) => {
   const authStore = useAuthStore();
 
   if (to.meta.public) {
+    if (to.path === "/login" && authStore.isAuthenticated) {
+      return "/";
+    }
     return true;
   }
 

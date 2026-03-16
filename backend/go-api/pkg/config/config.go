@@ -12,6 +12,7 @@ type Config struct {
 	MySQL MySQLConfig
 	Redis RedisConfig
 	AI    AIConfig
+	Auth  AuthConfig
 }
 
 type AppConfig struct {
@@ -43,6 +44,11 @@ type AIConfig struct {
 	PingTimeout time.Duration
 }
 
+type AuthConfig struct {
+	JWTSecret      string
+	TokenExpiresIn time.Duration
+}
+
 func Load() Config {
 	return Config{
 		App: AppConfig{
@@ -68,6 +74,10 @@ func Load() Config {
 		AI: AIConfig{
 			GRPCTarget:  getEnv("GRPC_AI_TARGET", "127.0.0.1:50051"),
 			PingTimeout: getDuration("AI_GRPC_PING_TIMEOUT_SECONDS", 2*time.Second),
+		},
+		Auth: AuthConfig{
+			JWTSecret:      getEnv("JWT_SECRET", "oncall-dev-secret"),
+			TokenExpiresIn: getDuration("JWT_EXPIRES_IN_SECONDS", 24*time.Hour),
 		},
 	}
 }

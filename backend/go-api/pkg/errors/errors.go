@@ -21,7 +21,9 @@ func New(code, message string, status int) AppError {
 }
 
 var (
-	ErrInternal  = New("INTERNAL_ERROR", "internal server error", http.StatusInternalServerError)
-	ErrNotFound  = New("NOT_FOUND", "resource not found", http.StatusNotFound)
-	ErrBadMethod = New("METHOD_NOT_ALLOWED", "method not allowed", http.StatusMethodNotAllowed)
+	ErrInternal     = New("INTERNAL_ERROR", "internal server error", http.StatusInternalServerError)
+	ErrNotFound     = New("NOT_FOUND", "resource not found", http.StatusNotFound)
+	ErrBadRequest   = New("BAD_REQUEST", "bad request", http.StatusBadRequest)
+	ErrUnauthorized = New("UNAUTHORIZED", "authentication required", http.StatusUnauthorized)
+	ErrBadMethod    = New("METHOD_NOT_ALLOWED", "method not allowed", http.StatusMethodNotAllowed)
 )
