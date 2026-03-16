@@ -4,6 +4,8 @@ import (
 	"github.com/gin-gonic/gin"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
+	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
+	knowledgeApp "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/application"
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/middleware"
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/observability"
 	sessionAPI "github.com/oyzg/OnCall/backend/go-api/internal/session/api"
@@ -29,6 +31,8 @@ func New(cfg config.Config, log *logger.Logger) *gin.Engine {
 func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authService := authApp.NewService(cfg.Auth)
 	authHandler := authAPI.NewHandler(authService)
+	knowledgeService := knowledgeApp.NewService()
+	knowledgeHandler := knowledgeAPI.NewHandler(knowledgeService)
 	sessionService := sessionApp.NewService()
 	sessionHandler := sessionAPI.NewHandler(sessionService)
 
@@ -73,4 +77,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	sessionGroup.GET("/:sessionID/messages", sessionHandler.ListMessages)
 	sessionGroup.POST("/:sessionID/messages/stream", sessionHandler.StreamMessage)
 	sessionGroup.DELETE("/:sessionID", sessionHandler.DeleteSession)
+
+	knowledgeGroup := router.Group("/api/v1/knowledge/documents")
+	knowledgeGroup.Use(middleware.Auth(authService))
+	knowledgeGroup.GET("", knowledgeHandler.ListDocuments)
+	knowledgeGroup.POST("", knowledgeHandler.UploadDocument)
+	knowledgeGroup.GET("/:documentID", knowledgeHandler.GetDocument)
 }

@@ -1,0 +1,22 @@
+package domain
+
+import "time"
+
+type Document struct {
+	ID            string     `json:"id"`
+	UserID        string     `json:"user_id"`
+	Title         string     `json:"title"`
+	Category      string     `json:"category"`
+	SourceType    string     `json:"source_type"`
+	FileName      string     `json:"file_name"`
+	ContentType   string     `json:"content_type"`
+	StoragePath   string     `json:"storage_path"`
+	SizeBytes     int64      `json:"size_bytes"`
+	Status        string     `json:"status"`
+	Summary       string     `json:"summary"`
+	FailureReason string     `json:"failure_reason,omitempty"`
+	ChunkCount    int        `json:"chunk_count"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	ProcessedAt   *time.Time `json:"processed_at,omitempty"`
+}

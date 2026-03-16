@@ -48,6 +48,25 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface KnowledgeDocument {
+  id: string;
+  user_id: string;
+  title: string;
+  category: string;
+  source_type: "file" | "text";
+  file_name: string;
+  content_type: string;
+  storage_path: string;
+  size_bytes: number;
+  status: "uploaded" | "processing" | "ready" | "failed";
+  summary: string;
+  failure_reason?: string;
+  chunk_count: number;
+  created_at: string;
+  updated_at: string;
+  processed_at?: string;
+}
+
 export async function fetchGoHealth() {
   const response = await http.get("/healthz");
   return response.data;
@@ -181,4 +200,50 @@ function parseSSEEvent(
   if (eventName === "done") {
     handlers.onDone?.(payload);
   }
+}
+
+export async function fetchKnowledgeDocuments(params?: { status?: string; category?: string }) {
+  const response = await http.get<ApiEnvelope<{ documents: KnowledgeDocument[] }>>("/api/v1/knowledge/documents", {
+    params,
+  });
+  return response.data;
+}
+
+export async function fetchKnowledgeDocument(documentId: string) {
+  const response = await http.get<ApiEnvelope<{ document: KnowledgeDocument }>>(
+    `/api/v1/knowledge/documents/${documentId}`
+  );
+  return response.data;
+}
+
+export async function uploadKnowledgeDocument(payload: {
+  title: string;
+  category: string;
+  content?: string;
+  file?: File | null;
+}) {
+  const formData = new FormData();
+  if (payload.title.trim()) {
+    formData.append("title", payload.title.trim());
+  }
+  if (payload.category.trim()) {
+    formData.append("category", payload.category.trim());
+  }
+  if (payload.content?.trim()) {
+    formData.append("content", payload.content.trim());
+  }
+  if (payload.file) {
+    formData.append("file", payload.file);
+  }
+
+  const response = await http.post<ApiEnvelope<{ document: KnowledgeDocument }>>(
+    "/api/v1/knowledge/documents",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    }
+  );
+  return response.data;
 }
