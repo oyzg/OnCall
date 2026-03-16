@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package oncall.ai.v1;
+
+option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai;aipb";
+
+import "common/metadata.proto";
+
+message RagRequest {
+  oncall.common.v1.RequestMetadata metadata = 1;
+  string query = 2;
+  int32 top_k = 3;
+}
+
+message RagChunk {
+  string document_id = 1;
+  string content = 2;
+  float score = 3;
+}
+
+message RagResponse {
+  repeated RagChunk chunks = 1;
+}
+
+service RAGService {
+  rpc Retrieve(RagRequest) returns (RagResponse);
+}
+

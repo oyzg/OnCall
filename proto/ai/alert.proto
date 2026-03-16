@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package oncall.ai.v1;
+
+option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai;aipb";
+
+import "common/metadata.proto";
+
+message AlertAnalysisRequest {
+  oncall.common.v1.RequestMetadata metadata = 1;
+  string alert_id = 2;
+  string title = 3;
+  string payload_json = 4;
+}
+
+message AlertAnalysisResponse {
+  string summary = 1;
+  repeated string possible_causes = 2;
+  repeated string suggested_actions = 3;
+}
+
+service AlertAnalysisService {
+  rpc Analyze(AlertAnalysisRequest) returns (AlertAnalysisResponse);
+}
+

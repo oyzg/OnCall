@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package oncall.ai.v1;
+
+option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai;aipb";
+
+import "common/metadata.proto";
+
+message ChatRequest {
+  oncall.common.v1.RequestMetadata metadata = 1;
+  string query = 2;
+  string conversation_id = 3;
+}
+
+message ChatResponse {
+  string answer = 1;
+  repeated string citations = 2;
+}
+
+service ChatService {
+  rpc Chat(ChatRequest) returns (ChatResponse);
+}
+

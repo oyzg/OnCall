@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package oncall.common.v1;
+
+option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/common;commonpb";
+
+message RequestMetadata {
+  string request_id = 1;
+  string user_id = 2;
+  string session_id = 3;
+}
+

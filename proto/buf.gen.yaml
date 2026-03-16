@@ -1,0 +1,11 @@
+version: v1
+plugins:
+  - plugin: buf.build/protocolbuffers/go
+    out: ../backend/go-api/gen/proto
+    opt:
+      - paths=source_relative
+  - plugin: buf.build/grpc/go
+    out: ../backend/go-api/gen/proto
+    opt:
+      - paths=source_relative
+
