@@ -9,10 +9,10 @@ dependencies = [
   "langchain>=0.3.21",
   "langgraph>=0.3.20",
   "pydantic>=2.10.6",
+  "pydantic-settings>=2.7.1",
   "uvicorn>=0.34.0"
 ]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
-

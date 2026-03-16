@@ -13,6 +13,7 @@ tmp/
 .vscode/
 __pycache__/
 *.pyc
+*.egg-info/
 backend/python-ai/.pytest_cache/
 frontend/web/.vite/
-
+tmp/
