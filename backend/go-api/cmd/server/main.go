@@ -1,43 +1,35 @@
 package main
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
-	"os"
+
+	"github.com/gin-gonic/gin"
+	"github.com/oyzg/OnCall/backend/go-api/internal/platform/httpserver"
+	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
+	"github.com/oyzg/OnCall/backend/go-api/pkg/logger"
 )
 
 func main() {
-	mux := http.NewServeMux()
+	cfg := config.Load()
+	appLogger := logger.New(cfg.App.LogLevel)
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{
-			"service": "go-api",
-			"status":  "ok",
-		})
-	})
-
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]string{
-			"message": "AI OnCall Go API bootstrap is ready",
-		})
-	})
-
-	port := os.Getenv("HTTP_PORT")
-	if port == "" {
-		port = "8080"
+	if cfg.App.Env == "prod" {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	server := &http.Server{
-		Addr:    "0.0.0.0:" + port,
-		Handler: mux,
+		Addr:         cfg.HTTPAddress(),
+		Handler:      httpserver.New(cfg, appLogger),
+		ReadTimeout:  cfg.HTTP.ReadTimeout,
+		WriteTimeout: cfg.HTTP.WriteTimeout,
+		IdleTimeout:  cfg.HTTP.IdleTimeout,
 	}
 
-	log.Fatal(server.ListenAndServe())
-}
+	appLogger.Info("go api starting",
+		"addr", cfg.HTTPAddress(),
+		"env", cfg.App.Env,
+	)
 
-func writeJSON(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(data)
+	log.Fatal(server.ListenAndServe())
 }

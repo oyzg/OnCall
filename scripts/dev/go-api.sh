@@ -10,4 +10,5 @@ export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
 
 mkdir -p "$GOCACHE" "$GOMODCACHE"
 
+go mod download
 go run ./cmd/server

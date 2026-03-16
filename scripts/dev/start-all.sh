@@ -61,6 +61,7 @@ start_go_api() {
     export GOMODCACHE="$GO_MOD_CACHE_DIR"
     export GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}"
     mkdir -p "$GOCACHE" "$GOMODCACHE"
+    go mod download
     go run ./cmd/server
   ) >"$GO_LOG" 2>&1 &
   GO_PID=$!
