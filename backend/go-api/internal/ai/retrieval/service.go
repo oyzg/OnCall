@@ -2,7 +2,6 @@ package retrieval
 
 import (
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"unicode"
@@ -17,8 +16,25 @@ type Reference struct {
 	DocumentID    string  `json:"document_id"`
 	DocumentTitle string  `json:"document_title"`
 	Category      string  `json:"category"`
+	ChunkIndex    int     `json:"chunk_index"`
 	Chunk         string  `json:"chunk"`
 	Score         float64 `json:"score"`
+}
+
+type RetrieveOptions struct {
+	Limit    int    `json:"limit"`
+	Category string `json:"category"`
+}
+
+type Report struct {
+	Query          string      `json:"query"`
+	Answer         string      `json:"answer"`
+	References     []Reference `json:"references"`
+	ScannedDocs    int         `json:"scanned_docs"`
+	ScannedChunks  int         `json:"scanned_chunks"`
+	MatchedChunks  int         `json:"matched_chunks"`
+	Strategy       string      `json:"strategy"`
+	RequestedLimit int         `json:"requested_limit"`
 }
 
 type Service struct {
@@ -30,41 +46,63 @@ func NewService(knowledge *knowledgeApp.Service) *Service {
 }
 
 func (s *Service) Retrieve(user authDomain.User, query string, limit int) []Reference {
-	if strings.TrimSpace(query) == "" || limit <= 0 {
-		return nil
+	report := s.RetrieveWithOptions(user, query, RetrieveOptions{Limit: limit})
+	return report.References
+}
+
+func (s *Service) RetrieveWithOptions(user authDomain.User, query string, options RetrieveOptions) Report {
+	query = strings.TrimSpace(query)
+	limit := options.Limit
+	if limit <= 0 {
+		limit = 4
+	}
+
+	report := Report{
+		Query:          query,
+		Answer:         BuildAnswer(query, nil),
+		References:     nil,
+		Strategy:       "precomputed_text_chunks",
+		RequestedLimit: limit,
+	}
+	if query == "" {
+		return report
 	}
 
 	queryTokens := tokenize(query)
 	if len(queryTokens) == 0 {
-		return nil
+		return report
 	}
 
-	documents := s.knowledge.ListDocuments(user, "ready", "", "", 0)
+	chunks := s.knowledge.ListReadyChunks(user, strings.TrimSpace(options.Category))
+	report.ScannedChunks = len(chunks)
+
+	scannedDocs := make(map[string]struct{})
 	hits := make([]Reference, 0)
-	for _, document := range documents {
-		content, err := os.ReadFile(document.StoragePath)
-		if err != nil {
+	for _, chunk := range chunks {
+		scannedDocs[chunk.DocumentID] = struct{}{}
+		score := similarityScore(queryTokens, tokenize(chunk.Content))
+		if score <= 0 {
 			continue
 		}
 
-		for _, chunk := range splitChunks(string(content), 320, 60) {
-			score := similarityScore(queryTokens, tokenize(chunk))
-			if score <= 0 {
-				continue
-			}
-
-			hits = append(hits, Reference{
-				DocumentID:    document.ID,
-				DocumentTitle: document.Title,
-				Category:      document.Category,
-				Chunk:         chunk,
-				Score:         score,
-			})
-		}
+		hits = append(hits, Reference{
+			DocumentID:    chunk.DocumentID,
+			DocumentTitle: chunk.DocumentTitle,
+			Category:      chunk.Category,
+			ChunkIndex:    chunk.Index,
+			Chunk:         chunk.Content,
+			Score:         score,
+		})
 	}
+
+	report.ScannedDocs = len(scannedDocs)
+	report.MatchedChunks = len(hits)
 
 	sort.Slice(hits, func(i, j int) bool {
 		if hits[i].Score == hits[j].Score {
+			if hits[i].DocumentTitle == hits[j].DocumentTitle {
+				return hits[i].ChunkIndex < hits[j].ChunkIndex
+			}
 			return hits[i].DocumentTitle < hits[j].DocumentTitle
 		}
 		return hits[i].Score > hits[j].Score
@@ -75,7 +113,9 @@ func (s *Service) Retrieve(user authDomain.User, query string, limit int) []Refe
 		hits = hits[:limit]
 	}
 
-	return hits
+	report.References = hits
+	report.Answer = BuildAnswer(query, hits)
+	return report
 }
 
 func BuildAnswer(question string, references []Reference) string {
@@ -114,34 +154,6 @@ func ToMessageReferences(references []Reference) []knowledgeDomain.Reference {
 		})
 	}
 	return items
-}
-
-func splitChunks(content string, chunkSize, overlap int) []string {
-	runes := []rune(strings.TrimSpace(content))
-	if len(runes) == 0 {
-		return nil
-	}
-
-	if chunkSize <= 0 {
-		chunkSize = 320
-	}
-	if overlap < 0 {
-		overlap = 0
-	}
-
-	step := max(1, chunkSize-overlap)
-	chunks := make([]string, 0)
-	for start := 0; start < len(runes); start += step {
-		end := min(len(runes), start+chunkSize)
-		chunk := strings.TrimSpace(string(runes[start:end]))
-		if chunk != "" {
-			chunks = append(chunks, chunk)
-		}
-		if end == len(runes) {
-			break
-		}
-	}
-	return chunks
 }
 
 func tokenize(content string) []string {

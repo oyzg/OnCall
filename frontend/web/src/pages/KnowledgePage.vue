@@ -154,13 +154,26 @@
       </div>
 
       <div class="search-layout">
-        <el-input
-          v-model="searchQuery"
-          type="textarea"
-          :rows="4"
-          resize="none"
-          placeholder="输入想验证的排障问题，例如：支付服务超时应该先查什么？"
-        />
+        <div class="search-form">
+          <el-input
+            v-model="searchQuery"
+            type="textarea"
+            :rows="4"
+            resize="none"
+            placeholder="输入想验证的排障问题，例如：支付服务超时应该先查什么？"
+          />
+          <div class="search-controls">
+            <el-select v-model="searchFilters.category" clearable placeholder="全部分类">
+              <el-option
+                v-for="option in categories"
+                :key="option"
+                :label="option"
+                :value="option"
+              />
+            </el-select>
+            <el-input-number v-model="searchFilters.limit" :min="1" :max="10" controls-position="right" />
+          </div>
+        </div>
 
         <div class="search-result">
           <el-empty v-if="!searchResult" description="输入问题后，这里会展示标准化检索结果与摘要答案。" />
@@ -168,6 +181,16 @@
             <el-card shadow="never" class="search-answer-card">
               <template #header>答案摘要</template>
               <p>{{ searchResult.answer }}</p>
+            </el-card>
+
+            <el-card shadow="never" class="search-metrics-card">
+              <template #header>检索诊断</template>
+              <div class="search-metrics">
+                <span>扫描文档：{{ searchResult.scanned_docs }}</span>
+                <span>扫描切片：{{ searchResult.scanned_chunks }}</span>
+                <span>命中切片：{{ searchResult.matched_chunks }}</span>
+                <span>策略：{{ searchResult.strategy }}</span>
+              </div>
             </el-card>
 
             <div class="retrieval-list">
@@ -243,6 +266,7 @@ import {
   retryKnowledgeDocument,
   uploadKnowledgeDocument,
   type KnowledgeDocument,
+  type RetrievalReport,
   type RetrievalReference,
 } from "@/services/api";
 
@@ -266,8 +290,12 @@ const documents = ref<KnowledgeDocument[]>([]);
 const detailVisible = ref(false);
 const activeDocument = ref<KnowledgeDocument | null>(null);
 const searchQuery = ref("");
+const searchFilters = reactive({
+  category: "",
+  limit: 4,
+});
 const searching = ref(false);
-const searchResult = ref<{ answer: string; references: RetrievalReference[] } | null>(null);
+const searchResult = ref<RetrievalReport | null>(null);
 let refreshTimer: number | null = null;
 
 const shouldPoll = computed(() =>
@@ -367,11 +395,12 @@ async function handleSearch() {
 
   searching.value = true;
   try {
-    const result = await retrieveKnowledge(query);
-    searchResult.value = {
-      answer: result.data.answer,
-      references: result.data.references,
-    };
+    const result = await retrieveKnowledge({
+      query,
+      category: searchFilters.category || undefined,
+      limit: searchFilters.limit,
+    });
+    searchResult.value = result.data;
   } catch (error) {
     searchResult.value = null;
     ElMessage.error(error instanceof Error ? error.message : "检索失败");
@@ -490,6 +519,31 @@ function formatSize(size: number) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+
+.search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-controls,
+.search-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.search-metrics-card {
+  margin-top: 12px;
+}
+
+.search-metrics span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(248, 250, 252, 0.92);
+  color: #475569;
+  font-size: 13px;
 }
 
 .row-actions {

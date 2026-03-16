@@ -26,21 +26,33 @@ type UploadInput struct {
 	Content     []byte
 }
 
+type Chunk struct {
+	DocumentID    string `json:"document_id"`
+	DocumentTitle string `json:"document_title"`
+	Category      string `json:"category"`
+	Index         int    `json:"index"`
+	Content       string `json:"content"`
+}
+
 type Service struct {
 	mu           sync.RWMutex
 	documents    map[string]knowledgeDomain.Document
 	rootDir      string
+	chunksDir    string
 	metadataPath string
 }
 
 func NewService() *Service {
 	rootDir := filepath.Join("tmp", "knowledge", "documents")
+	chunksDir := filepath.Join("tmp", "knowledge", "chunks")
 	metadataPath := filepath.Join("tmp", "knowledge", "metadata.json")
 	_ = os.MkdirAll(rootDir, 0o755)
+	_ = os.MkdirAll(chunksDir, 0o755)
 
 	service := &Service{
 		documents:    make(map[string]knowledgeDomain.Document),
 		rootDir:      rootDir,
+		chunksDir:    chunksDir,
 		metadataPath: metadataPath,
 	}
 	service.load()
@@ -146,6 +158,7 @@ func (s *Service) DeleteDocument(user authDomain.User, documentID string) bool {
 	}
 
 	_ = os.Remove(document.StoragePath)
+	_ = os.Remove(s.chunkPath(documentID))
 	delete(s.documents, documentID)
 	s.persistLocked()
 	return true
@@ -167,6 +180,7 @@ func (s *Service) RetryDocument(user authDomain.User, documentID string) (knowle
 	document.ChunkCount = 0
 	document.UpdatedAt = time.Now()
 	document.ProcessedAt = nil
+	_ = os.Remove(s.chunkPath(documentID))
 	s.documents[documentID] = document
 	s.persistLocked()
 	s.mu.Unlock()
@@ -204,6 +218,10 @@ func (s *Service) processDocument(documentID string) {
 	}
 
 	chunks := splitTextChunks(text, 320, 60)
+	if err := s.writeChunks(document, chunks); err != nil {
+		s.markFailed(documentID, "无法写入文档切片结果")
+		return
+	}
 	chunkPreviews := make([]string, 0, min(3, len(chunks)))
 	for _, chunk := range chunks {
 		chunkPreviews = append(chunkPreviews, textPreview(chunk, 120))
@@ -244,6 +262,20 @@ func (s *Service) markFailed(documentID, reason string) {
 		document.ChunkCount = 0
 		document.UpdatedAt = time.Now()
 	})
+	_ = os.Remove(s.chunkPath(documentID))
+}
+
+func (s *Service) ListReadyChunks(user authDomain.User, category string) []Chunk {
+	documents := s.ListDocuments(user, "ready", category, "", 0)
+	items := make([]Chunk, 0)
+	for _, document := range documents {
+		chunks, err := s.loadDocumentChunks(document)
+		if err != nil {
+			continue
+		}
+		items = append(items, chunks...)
+	}
+	return items
 }
 
 func (s *Service) updateDocument(documentID string, updater func(document *knowledgeDomain.Document)) {
@@ -289,6 +321,42 @@ func (s *Service) persistLocked() {
 		return
 	}
 	_ = os.WriteFile(s.metadataPath, payload, 0o644)
+}
+
+func (s *Service) writeChunks(document knowledgeDomain.Document, chunks []string) error {
+	items := make([]Chunk, 0, len(chunks))
+	for index, chunk := range chunks {
+		items = append(items, Chunk{
+			DocumentID:    document.ID,
+			DocumentTitle: document.Title,
+			Category:      document.Category,
+			Index:         index,
+			Content:       chunk,
+		})
+	}
+
+	payload, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.chunkPath(document.ID), payload, 0o644)
+}
+
+func (s *Service) loadDocumentChunks(document knowledgeDomain.Document) ([]Chunk, error) {
+	data, err := os.ReadFile(s.chunkPath(document.ID))
+	if err != nil {
+		return nil, err
+	}
+
+	var chunks []Chunk
+	if err := json.Unmarshal(data, &chunks); err != nil {
+		return nil, err
+	}
+	return chunks, nil
+}
+
+func (s *Service) chunkPath(documentID string) string {
+	return filepath.Join(s.chunksDir, documentID+".json")
 }
 
 func normalizeSourceType(sourceType, fileName string) string {

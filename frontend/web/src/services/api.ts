@@ -91,8 +91,20 @@ export interface RetrievalReference {
   document_id: string;
   document_title: string;
   category: string;
+  chunk_index?: number;
   chunk: string;
   score: number;
+}
+
+export interface RetrievalReport {
+  query: string;
+  answer: string;
+  references: RetrievalReference[];
+  scanned_docs: number;
+  scanned_chunks: number;
+  matched_chunks: number;
+  strategy: string;
+  requested_limit: number;
 }
 
 export interface AlertItem {
@@ -361,11 +373,11 @@ export async function retryKnowledgeDocument(documentId: string) {
   return response.data;
 }
 
-export async function retrieveKnowledge(query: string) {
-  const response = await http.post<
-    ApiEnvelope<{ query: string; answer: string; references: RetrievalReference[] }>
-  >("/api/v1/rag/retrieve", {
-    query,
+export async function retrieveKnowledge(payload: { query: string; category?: string; limit?: number }) {
+  const response = await http.post<ApiEnvelope<RetrievalReport>>("/api/v1/rag/retrieve", {
+    query: payload.query,
+    category: payload.category,
+    limit: payload.limit,
   });
   return response.data;
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -18,7 +19,9 @@ type Handler struct {
 }
 
 type retrieveRequest struct {
-	Query string `json:"query"`
+	Query    string `json:"query"`
+	Category string `json:"category"`
+	Limit    int    `json:"limit"`
 }
 
 func NewHandler(service *retrieval.Service) *Handler {
@@ -44,12 +47,17 @@ func (h *Handler) Retrieve(c *gin.Context) {
 		return
 	}
 
-	references := h.service.Retrieve(user, query, 4)
-	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
-		"query":      query,
-		"answer":     retrieval.BuildAnswer(query, references),
-		"references": references,
+	limit := req.Limit
+	if limit <= 0 {
+		if parsed, err := strconv.Atoi(strings.TrimSpace(c.Query("limit"))); err == nil {
+			limit = parsed
+		}
+	}
+	report := h.service.RetrieveWithOptions(user, query, retrieval.RetrieveOptions{
+		Limit:    limit,
+		Category: strings.TrimSpace(req.Category),
 	})
+	response.Success(c.Writer, http.StatusOK, requestID(c), report)
 }
 
 func currentUser(c *gin.Context) (authDomain.User, bool) {
