@@ -1,4 +1,7 @@
 import { http } from "@/services/http";
+import { getAccessToken } from "@/stores/session";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8080";
 
 export interface ApiEnvelope<T> {
   code: string;
@@ -27,6 +30,24 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
+export interface ChatSession {
+  id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  session_id: string;
+  role: "user" | "assistant";
+  content: string;
+  status: "streaming" | "completed" | "failed";
+  created_at: string;
+}
+
 export async function fetchGoHealth() {
   const response = await http.get("/healthz");
   return response.data;
@@ -45,4 +66,119 @@ export async function login(payload: LoginPayload) {
 export async function fetchCurrentUser() {
   const response = await http.get<ApiEnvelope<{ user: AuthUser }>>("/api/v1/auth/me");
   return response.data;
+}
+
+export async function fetchSessions() {
+  const response = await http.get<ApiEnvelope<{ sessions: ChatSession[] }>>("/api/v1/sessions");
+  return response.data;
+}
+
+export async function createSession(title = "") {
+  const response = await http.post<ApiEnvelope<{ session: ChatSession }>>("/api/v1/sessions", { title });
+  return response.data;
+}
+
+export async function deleteSession(sessionId: string) {
+  const response = await http.delete<ApiEnvelope<{ deleted: boolean }>>(`/api/v1/sessions/${sessionId}`);
+  return response.data;
+}
+
+export async function fetchSessionMessages(sessionId: string) {
+  const response = await http.get<ApiEnvelope<{ messages: ChatMessage[] }>>(
+    `/api/v1/sessions/${sessionId}/messages`
+  );
+  return response.data;
+}
+
+export async function streamSessionMessage(
+  sessionId: string,
+  content: string,
+  handlers: {
+    onChunk?: (payload: { message_id: string; delta: string }) => void;
+    onDone?: (payload: { message_id: string; content: string }) => void;
+  }
+) {
+  const token = getAccessToken();
+  const response = await fetch(`${API_BASE_URL}/api/v1/sessions/${sessionId}/messages/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ content }),
+  });
+
+  if (!response.ok) {
+    let message = "消息发送失败";
+    try {
+      const payload = await response.json();
+      message = payload?.message || message;
+    } catch {
+      // Keep fallback message.
+    }
+    throw new Error(message);
+  }
+
+  if (!response.body) {
+    throw new Error("流式响应不可用");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() || "";
+
+    for (const event of events) {
+      parseSSEEvent(event, handlers);
+    }
+  }
+
+  if (buffer.trim()) {
+    parseSSEEvent(buffer, handlers);
+  }
+}
+
+function parseSSEEvent(
+  rawEvent: string,
+  handlers: {
+    onChunk?: (payload: { message_id: string; delta: string }) => void;
+    onDone?: (payload: { message_id: string; content: string }) => void;
+  }
+) {
+  let eventName = "message";
+  const dataLines: string[] = [];
+
+  for (const line of rawEvent.split("\n")) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice(6).trim();
+      continue;
+    }
+
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+
+  if (dataLines.length === 0) {
+    return;
+  }
+
+  const payload = JSON.parse(dataLines.join("\n"));
+  if (eventName === "chunk") {
+    handlers.onChunk?.(payload);
+    return;
+  }
+
+  if (eventName === "done") {
+    handlers.onDone?.(payload);
+  }
 }

@@ -6,6 +6,8 @@ import (
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/middleware"
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/observability"
+	sessionAPI "github.com/oyzg/OnCall/backend/go-api/internal/session/api"
+	sessionApp "github.com/oyzg/OnCall/backend/go-api/internal/session/application"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/logger"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/response"
@@ -27,6 +29,8 @@ func New(cfg config.Config, log *logger.Logger) *gin.Engine {
 func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authService := authApp.NewService(cfg.Auth)
 	authHandler := authAPI.NewHandler(authService)
+	sessionService := sessionApp.NewService()
+	sessionHandler := sessionAPI.NewHandler(sessionService)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -61,4 +65,12 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authGroup := router.Group("/api/v1/auth")
 	authGroup.POST("/login", authHandler.Login)
 	authGroup.GET("/me", middleware.Auth(authService), authHandler.Me)
+
+	sessionGroup := router.Group("/api/v1/sessions")
+	sessionGroup.Use(middleware.Auth(authService))
+	sessionGroup.GET("", sessionHandler.ListSessions)
+	sessionGroup.POST("", sessionHandler.CreateSession)
+	sessionGroup.GET("/:sessionID/messages", sessionHandler.ListMessages)
+	sessionGroup.POST("/:sessionID/messages/stream", sessionHandler.StreamMessage)
+	sessionGroup.DELETE("/:sessionID", sessionHandler.DeleteSession)
 }
