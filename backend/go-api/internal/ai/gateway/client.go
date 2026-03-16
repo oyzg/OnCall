@@ -14,42 +14,42 @@ import (
 )
 
 type ChatRequest struct {
-	Query          string
-	ConversationID string
+	Query          string `json:"query"`
+	ConversationID string `json:"conversation_id"`
 }
 
 type ChatResponse struct {
-	Answer    string
-	Citations []string
+	Answer    string   `json:"answer"`
+	Citations []string `json:"citations"`
 }
 
 type AlertAnalysisRequest struct {
-	AlertID         string
-	Title           string
-	Service         string
-	Environment     string
-	Severity        string
-	Source          string
-	Summary         string
-	Description     string
-	Labels          map[string]string
-	TriggeredAt     string
-	LinkedSessionID string
+	AlertID         string            `json:"alert_id"`
+	Title           string            `json:"title"`
+	Service         string            `json:"service"`
+	Environment     string            `json:"environment"`
+	Severity        string            `json:"severity"`
+	Source          string            `json:"source"`
+	Summary         string            `json:"summary"`
+	Description     string            `json:"description"`
+	Labels          map[string]string `json:"labels"`
+	TriggeredAt     string            `json:"triggered_at"`
+	LinkedSessionID string            `json:"linked_session_id"`
 }
 
 type AlertAnalysisResponse struct {
-	Status             string
-	Summary            string
-	SeverityAssessment string
-	PossibleCauses     []string
-	SuggestedActions   []string
-	RecommendedTools   []string
-	KnowledgeQueries   []string
-	Workflow           string
-	Confidence         string
-	Source             string
-	GeneratedAt        string
-	Error              string
+	Status             string   `json:"status"`
+	Summary            string   `json:"summary"`
+	SeverityAssessment string   `json:"severity_assessment"`
+	PossibleCauses     []string `json:"possible_causes"`
+	SuggestedActions   []string `json:"suggested_actions"`
+	RecommendedTools   []string `json:"recommended_tools"`
+	KnowledgeQueries   []string `json:"knowledge_queries"`
+	Workflow           string   `json:"workflow"`
+	Confidence         string   `json:"confidence"`
+	Source             string   `json:"source"`
+	GeneratedAt        string   `json:"generated_at"`
+	Error              string   `json:"error"`
 }
 
 type Client interface {
