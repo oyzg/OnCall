@@ -61,7 +61,16 @@
           <h2>知识文档</h2>
           <p>查看文档状态、处理结果和生命周期。</p>
         </div>
-        <el-button plain @click="loadDocuments">刷新</el-button>
+        <div class="list-actions">
+          <el-input
+            v-model="filters.query"
+            clearable
+            placeholder="按标题或文件名搜索"
+            @keyup.enter="loadDocuments"
+            @clear="loadDocuments"
+          />
+          <el-button plain @click="loadDocuments">刷新</el-button>
+        </div>
       </div>
 
       <div class="knowledge-table">
@@ -117,7 +126,18 @@
           </el-table-column>
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
-              <el-button text type="primary" @click="openDetail(row.id)">详情</el-button>
+              <div class="row-actions">
+                <el-button text type="primary" @click="openDetail(row.id)">详情</el-button>
+                <el-button
+                  v-if="row.status === 'failed'"
+                  text
+                  type="warning"
+                  @click="handleRetry(row.id)"
+                >
+                  重试
+                </el-button>
+                <el-button text type="danger" @click="handleDelete(row.id)">删除</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -187,6 +207,21 @@
             {{ activeDocument.processed_at ? formatTime(activeDocument.processed_at) : "-" }}
           </el-descriptions-item>
           <el-descriptions-item label="摘要">{{ activeDocument.summary }}</el-descriptions-item>
+          <el-descriptions-item label="文本预览">
+            <pre class="detail-preview">{{ activeDocument.text_preview || "暂无文本预览" }}</pre>
+          </el-descriptions-item>
+          <el-descriptions-item label="切片预览">
+            <div v-if="activeDocument.chunk_previews.length" class="chunk-preview-list">
+              <article
+                v-for="chunk in activeDocument.chunk_previews"
+                :key="chunk"
+                class="chunk-preview-item"
+              >
+                {{ chunk }}
+              </article>
+            </div>
+            <span v-else>暂无切片预览</span>
+          </el-descriptions-item>
           <el-descriptions-item v-if="activeDocument.failure_reason" label="失败原因">
             {{ activeDocument.failure_reason }}
           </el-descriptions-item>
@@ -201,9 +236,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { ElMessage, type UploadFile, type UploadFiles } from "element-plus";
 
 import {
+  deleteKnowledgeDocument,
   fetchKnowledgeDocument,
   fetchKnowledgeDocuments,
   retrieveKnowledge,
+  retryKnowledgeDocument,
   uploadKnowledgeDocument,
   type KnowledgeDocument,
   type RetrievalReference,
@@ -220,6 +257,7 @@ const form = reactive({
 const filters = reactive({
   status: "",
   category: "",
+  query: "",
 });
 
 const selectedFile = ref<File | null>(null);
@@ -251,6 +289,7 @@ async function loadDocuments() {
   const result = await fetchKnowledgeDocuments({
     status: filters.status || undefined,
     category: filters.category || undefined,
+    query: filters.query.trim() || undefined,
   });
   documents.value = result.data.documents;
   scheduleRefresh();
@@ -290,6 +329,33 @@ async function openDetail(documentId: string) {
   const result = await fetchKnowledgeDocument(documentId);
   activeDocument.value = result.data.document;
   detailVisible.value = true;
+}
+
+async function handleDelete(documentId: string) {
+  try {
+    await deleteKnowledgeDocument(documentId);
+    ElMessage.success("文档已删除");
+    if (activeDocument.value?.id === documentId) {
+      detailVisible.value = false;
+      activeDocument.value = null;
+    }
+    await loadDocuments();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "删除失败");
+  }
+}
+
+async function handleRetry(documentId: string) {
+  try {
+    await retryKnowledgeDocument(documentId);
+    ElMessage.success("文档已重新进入处理队列");
+    await loadDocuments();
+    if (activeDocument.value?.id === documentId) {
+      await openDetail(documentId);
+    }
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "重试失败");
+  }
 }
 
 async function handleSearch() {
@@ -413,10 +479,45 @@ function formatSize(size: number) {
   font-size: 13px;
 }
 
+.list-actions,
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .upload-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
+}
+
+.row-actions {
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.detail-preview {
+  margin: 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.92);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+}
+
+.chunk-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chunk-preview-item {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.92);
+  line-height: 1.6;
 }
 
 .knowledge-table {

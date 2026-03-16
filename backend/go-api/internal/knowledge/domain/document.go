@@ -14,6 +14,8 @@ type Document struct {
 	SizeBytes     int64      `json:"size_bytes"`
 	Status        string     `json:"status"`
 	Summary       string     `json:"summary"`
+	TextPreview   string     `json:"text_preview"`
+	ChunkPreviews []string   `json:"chunk_previews"`
 	FailureReason string     `json:"failure_reason,omitempty"`
 	ChunkCount    int        `json:"chunk_count"`
 	CreatedAt     time.Time  `json:"created_at"`

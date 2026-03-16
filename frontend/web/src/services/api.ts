@@ -78,6 +78,8 @@ export interface KnowledgeDocument {
   size_bytes: number;
   status: "uploaded" | "processing" | "ready" | "failed";
   summary: string;
+  text_preview: string;
+  chunk_previews: string[];
   failure_reason?: string;
   chunk_count: number;
   created_at: string;
@@ -294,7 +296,12 @@ function parseSSEEvent(
   }
 }
 
-export async function fetchKnowledgeDocuments(params?: { status?: string; category?: string }) {
+export async function fetchKnowledgeDocuments(params?: {
+  status?: string;
+  category?: string;
+  query?: string;
+  limit?: number;
+}) {
   const response = await http.get<ApiEnvelope<{ documents: KnowledgeDocument[] }>>("/api/v1/knowledge/documents", {
     params,
   });
@@ -336,6 +343,20 @@ export async function uploadKnowledgeDocument(payload: {
         "Content-Type": "multipart/form-data",
       },
     }
+  );
+  return response.data;
+}
+
+export async function deleteKnowledgeDocument(documentId: string) {
+  const response = await http.delete<ApiEnvelope<{ deleted: boolean }>>(
+    `/api/v1/knowledge/documents/${documentId}`
+  );
+  return response.data;
+}
+
+export async function retryKnowledgeDocument(documentId: string) {
+  const response = await http.post<ApiEnvelope<{ document: KnowledgeDocument }>>(
+    `/api/v1/knowledge/documents/${documentId}/reprocess`
   );
   return response.data;
 }

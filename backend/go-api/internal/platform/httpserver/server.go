@@ -96,6 +96,8 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	knowledgeGroup.GET("", knowledgeHandler.ListDocuments)
 	knowledgeGroup.POST("", knowledgeHandler.UploadDocument)
 	knowledgeGroup.GET("/:documentID", knowledgeHandler.GetDocument)
+	knowledgeGroup.DELETE("/:documentID", knowledgeHandler.DeleteDocument)
+	knowledgeGroup.POST("/:documentID/reprocess", knowledgeHandler.RetryDocument)
 
 	ragGroup := router.Group("/api/v1/rag")
 	ragGroup.Use(middleware.Auth(authService))

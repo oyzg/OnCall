@@ -39,7 +39,7 @@ func (s *Service) Retrieve(user authDomain.User, query string, limit int) []Refe
 		return nil
 	}
 
-	documents := s.knowledge.ListDocuments(user, "ready", "")
+	documents := s.knowledge.ListDocuments(user, "ready", "", "", 0)
 	hits := make([]Reference, 0)
 	for _, document := range documents {
 		content, err := os.ReadFile(document.StoragePath)

@@ -3,6 +3,7 @@ package api
 import (
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -88,7 +89,13 @@ func (h *Handler) ListDocuments(c *gin.Context) {
 		return
 	}
 
-	items := h.service.ListDocuments(user, strings.TrimSpace(c.Query("status")), strings.TrimSpace(c.Query("category")))
+	items := h.service.ListDocuments(
+		user,
+		strings.TrimSpace(c.Query("status")),
+		strings.TrimSpace(c.Query("category")),
+		strings.TrimSpace(c.Query("query")),
+		parsePositiveInt(c.Query("limit")),
+	)
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"documents": items})
 }
 
@@ -108,6 +115,37 @@ func (h *Handler) GetDocument(c *gin.Context) {
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"document": document})
 }
 
+func (h *Handler) DeleteDocument(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok {
+		writeFailure(c, appErrors.ErrUnauthorized)
+		return
+	}
+
+	if deleted := h.service.DeleteDocument(user, c.Param("documentID")); !deleted {
+		writeFailure(c, appErrors.ErrNotFound)
+		return
+	}
+
+	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"deleted": true})
+}
+
+func (h *Handler) RetryDocument(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok {
+		writeFailure(c, appErrors.ErrUnauthorized)
+		return
+	}
+
+	document, err := h.service.RetryDocument(user, c.Param("documentID"))
+	if err != nil {
+		writeFailure(c, appErrors.ErrNotFound)
+		return
+	}
+
+	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"document": document})
+}
+
 func currentUser(c *gin.Context) (authDomain.User, bool) {
 	return authAPI.CurrentUser(c)
 }
@@ -118,4 +156,12 @@ func requestID(c *gin.Context) string {
 
 func writeFailure(c *gin.Context, appErr appErrors.AppError) {
 	response.Failure(c.Writer, appErr.HTTPStatus, requestID(c), appErr.Code, appErr.Message)
+}
+
+func parsePositiveInt(raw string) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		return 0
+	}
+	return value
 }
