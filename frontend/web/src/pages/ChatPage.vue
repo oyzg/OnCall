@@ -17,6 +17,7 @@
         >
           <button class="session-button" type="button" @click="selectSession(session.id)">
             <strong>{{ session.title }}</strong>
+            <span v-if="session.last_message_preview" class="session-preview">{{ session.last_message_preview }}</span>
             <small>{{ formatTime(session.updated_at) }}</small>
           </button>
           <el-button text type="danger" @click.stop="handleDeleteSession(session.id)">删除</el-button>
@@ -389,6 +390,15 @@ async function focusComposer() {
 .message-bubble span {
   color: #64748b;
   font-size: 12px;
+}
+
+.session-preview {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chat-panel {

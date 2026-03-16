@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -64,7 +65,11 @@ func (h *Handler) ListSessions(c *gin.Context) {
 	}
 
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
-		"sessions": h.service.ListSessions(user),
+		"sessions": h.service.ListSessions(
+			user,
+			strings.TrimSpace(c.Query("query")),
+			parsePositiveInt(c.Query("limit")),
+		),
 	})
 }
 
@@ -90,13 +95,23 @@ func (h *Handler) ListMessages(c *gin.Context) {
 		return
 	}
 
-	messages, exists := h.service.ListMessages(user, c.Param("sessionID"))
+	page, exists := h.service.ListMessages(
+		user,
+		c.Param("sessionID"),
+		parsePositiveInt(c.Query("limit")),
+		strings.TrimSpace(c.Query("before_id")),
+	)
 	if !exists {
 		writeFailure(c, appErrors.ErrNotFound)
 		return
 	}
 
-	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"messages": messages})
+	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
+		"messages":    page.Messages,
+		"total":       page.Total,
+		"has_more":    page.HasMore,
+		"next_cursor": page.NextCursor,
+	})
 }
 
 func (h *Handler) StreamMessage(c *gin.Context) {
@@ -209,4 +224,12 @@ func toSessionReferences(references []retrieval.Reference) []sessionDomain.Refer
 		})
 	}
 	return items
+}
+
+func parsePositiveInt(raw string) int {
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value <= 0 {
+		return 0
+	}
+	return value
 }

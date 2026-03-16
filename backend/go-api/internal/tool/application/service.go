@@ -317,7 +317,7 @@ func (s *Service) executePlatformOverview(user authDomain.User, _ map[string]any
 			"roles":        user.Roles,
 		},
 		"sessions": map[string]any{
-			"count": len(s.sessions.ListSessions(user)),
+			"count": len(s.sessions.ListSessions(user, "", 0)),
 		},
 		"knowledge_documents": map[string]any{
 			"count": len(s.knowledge.ListDocuments(user, "", "")),

@@ -34,6 +34,8 @@ export interface ChatSession {
   id: string;
   user_id: string;
   title: string;
+  last_message_preview: string;
+  message_count: number;
   created_at: string;
   updated_at: string;
   last_message_at: string;
@@ -47,6 +49,13 @@ export interface ChatMessage {
   status: "streaming" | "completed" | "failed";
   references?: MessageReference[];
   created_at: string;
+}
+
+export interface ChatMessagePage {
+  messages: ChatMessage[];
+  total: number;
+  has_more: boolean;
+  next_cursor?: string;
 }
 
 export interface MessageReference {
@@ -178,7 +187,7 @@ export async function deleteSession(sessionId: string) {
 }
 
 export async function fetchSessionMessages(sessionId: string) {
-  const response = await http.get<ApiEnvelope<{ messages: ChatMessage[] }>>(
+  const response = await http.get<ApiEnvelope<ChatMessagePage>>(
     `/api/v1/sessions/${sessionId}/messages`
   );
   return response.data;
