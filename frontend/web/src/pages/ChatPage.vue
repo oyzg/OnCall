@@ -49,6 +49,20 @@
             <span>{{ formatTime(message.created_at) }}</span>
           </header>
           <p>{{ message.content || (message.status === 'streaming' ? '正在生成回复...' : '') }}</p>
+          <div v-if="message.references?.length" class="reference-list">
+            <strong>引用片段</strong>
+            <div
+              v-for="reference in message.references"
+              :key="`${message.id}-${reference.document_id}-${reference.excerpt}`"
+              class="reference-card"
+            >
+              <header>
+                <span>{{ reference.document_title }}</span>
+                <small>{{ reference.category }} · {{ reference.score.toFixed(2) }}</small>
+              </header>
+              <p>{{ reference.excerpt }}</p>
+            </div>
+          </div>
         </article>
       </div>
 
@@ -62,7 +76,7 @@
           placeholder="输入你的排障问题、告警上下文或要查询的系统信息"
         />
         <div class="composer-actions">
-          <span>演示阶段先返回占位流式回复，下一阶段接 AI 编排。</span>
+          <span>当前会结合知识库返回引用片段，下一阶段再接工具调用和更完整的 AI 编排。</span>
           <el-button type="primary" :loading="sending" @click="handleSend">发送消息</el-button>
         </div>
       </div>
@@ -193,7 +207,7 @@ async function handleSend() {
         target.status = "streaming";
         await scrollToBottom();
       },
-      onDone: ({ message_id, content: finalContent }) => {
+      onDone: ({ message_id, content: finalContent, references }) => {
         const target = messages.value.find((item) => item.id === assistantMessage.id || item.id === message_id);
         if (!target) {
           return;
@@ -202,6 +216,7 @@ async function handleSend() {
         target.id = message_id;
         target.content = finalContent;
         target.status = "completed";
+        target.references = references || [];
       },
     });
 
@@ -364,6 +379,42 @@ async function scrollToBottom() {
   color: #0f172a;
   line-height: 1.7;
   white-space: pre-wrap;
+}
+
+.reference-list {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.45);
+}
+
+.reference-list > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.reference-card {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.reference-card + .reference-card {
+  margin-top: 10px;
+}
+
+.reference-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.reference-card p {
+  margin: 0;
+  font-size: 13px;
+  color: #334155;
 }
 
 .composer {

@@ -20,3 +20,11 @@ type Document struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ProcessedAt   *time.Time `json:"processed_at,omitempty"`
 }
+
+type Reference struct {
+	DocumentID    string  `json:"document_id"`
+	DocumentTitle string  `json:"document_title"`
+	Category      string  `json:"category"`
+	Excerpt       string  `json:"excerpt"`
+	Score         float64 `json:"score"`
+}

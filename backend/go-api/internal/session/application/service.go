@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
 	"github.com/oyzg/OnCall/backend/go-api/internal/session/domain"
@@ -93,13 +92,13 @@ func (s *Service) ListMessages(user authDomain.User, sessionID string) ([]domain
 	return items, true
 }
 
-func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content string) (domain.Message, []string, bool) {
+func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content string) (domain.Message, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	session, ok := s.sessions[sessionID]
 	if !ok || session.UserID != user.ID {
-		return domain.Message{}, nil, false
+		return domain.Message{}, false
 	}
 
 	now := time.Now()
@@ -112,14 +111,14 @@ func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content s
 		CreatedAt: now,
 	}
 
-	replyContent := buildReply(content)
 	assistantMessage := domain.Message{
-		ID:        nextID("msg"),
-		SessionID: sessionID,
-		Role:      "assistant",
-		Content:   "",
-		Status:    "streaming",
-		CreatedAt: now.Add(time.Millisecond),
+		ID:         nextID("msg"),
+		SessionID:  sessionID,
+		Role:       "assistant",
+		Content:    "",
+		Status:     "streaming",
+		References: nil,
+		CreatedAt:  now.Add(time.Millisecond),
 	}
 
 	s.messages[sessionID] = append(s.messages[sessionID], userMessage, assistantMessage)
@@ -131,10 +130,10 @@ func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content s
 	session.LastMessageAt = now
 	s.sessions[sessionID] = session
 
-	return assistantMessage, splitChunks(replyContent, 18), true
+	return assistantMessage, true
 }
 
-func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messageID, content string) bool {
+func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messageID, content string, references []domain.Reference) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -150,6 +149,7 @@ func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messag
 		}
 		messages[index].Content = content
 		messages[index].Status = "completed"
+		messages[index].References = references
 		break
 	}
 
@@ -182,30 +182,6 @@ func titleFromMessage(content string) string {
 		return string(runes[:20]) + "..."
 	}
 	return text
-}
-
-func buildReply(content string) string {
-	return fmt.Sprintf(
-		"已收到你的问题：%s\n\n当前是阶段 5 的会话流式占位回复，下一阶段会在这里接入知识检索、工具调用和 AI 编排能力。",
-		strings.TrimSpace(content),
-	)
-}
-
-func splitChunks(content string, chunkSize int) []string {
-	if chunkSize <= 0 || utf8.RuneCountInString(content) <= chunkSize {
-		return []string{content}
-	}
-
-	runes := []rune(content)
-	chunks := make([]string, 0, len(runes)/chunkSize+1)
-	for start := 0; start < len(runes); start += chunkSize {
-		end := start + chunkSize
-		if end > len(runes) {
-			end = len(runes)
-		}
-		chunks = append(chunks, string(runes[start:end]))
-	}
-	return chunks
 }
 
 func nextID(prefix string) string {

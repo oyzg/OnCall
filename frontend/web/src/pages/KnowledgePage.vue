@@ -124,6 +124,50 @@
       </div>
     </section>
 
+    <section class="knowledge-search-panel">
+      <div class="section-heading">
+        <div>
+          <h2>检索测试</h2>
+          <p>阶段 7 先用文本检索跑通 RAG 链路，后续再切到 Embedding + Milvus/ES 混合检索。</p>
+        </div>
+        <el-button type="primary" :loading="searching" @click="handleSearch">开始检索</el-button>
+      </div>
+
+      <div class="search-layout">
+        <el-input
+          v-model="searchQuery"
+          type="textarea"
+          :rows="4"
+          resize="none"
+          placeholder="输入想验证的排障问题，例如：支付服务超时应该先查什么？"
+        />
+
+        <div class="search-result">
+          <el-empty v-if="!searchResult" description="输入问题后，这里会展示标准化检索结果与摘要答案。" />
+          <template v-else>
+            <el-card shadow="never" class="search-answer-card">
+              <template #header>答案摘要</template>
+              <p>{{ searchResult.answer }}</p>
+            </el-card>
+
+            <div class="retrieval-list">
+              <article
+                v-for="reference in searchResult.references"
+                :key="`${reference.document_id}-${reference.chunk}`"
+                class="retrieval-item"
+              >
+                <header>
+                  <strong>{{ reference.document_title }}</strong>
+                  <span>{{ reference.category }} · {{ reference.score.toFixed(2) }}</span>
+                </header>
+                <p>{{ reference.chunk }}</p>
+              </article>
+            </div>
+          </template>
+        </div>
+      </div>
+    </section>
+
     <el-drawer v-model="detailVisible" title="文档详情" size="520px">
       <template v-if="activeDocument">
         <div class="detail-block">
@@ -159,8 +203,10 @@ import { ElMessage, type UploadFile, type UploadFiles } from "element-plus";
 import {
   fetchKnowledgeDocument,
   fetchKnowledgeDocuments,
+  retrieveKnowledge,
   uploadKnowledgeDocument,
   type KnowledgeDocument,
+  type RetrievalReference,
 } from "@/services/api";
 
 const categories = ["general", "runbook", "faq", "incident", "release"];
@@ -181,6 +227,9 @@ const uploading = ref(false);
 const documents = ref<KnowledgeDocument[]>([]);
 const detailVisible = ref(false);
 const activeDocument = ref<KnowledgeDocument | null>(null);
+const searchQuery = ref("");
+const searching = ref(false);
+const searchResult = ref<{ answer: string; references: RetrievalReference[] } | null>(null);
 let refreshTimer: number | null = null;
 
 const shouldPoll = computed(() =>
@@ -241,6 +290,28 @@ async function openDetail(documentId: string) {
   const result = await fetchKnowledgeDocument(documentId);
   activeDocument.value = result.data.document;
   detailVisible.value = true;
+}
+
+async function handleSearch() {
+  const query = searchQuery.value.trim()
+  if (!query) {
+    ElMessage.warning("请输入要测试的检索问题");
+    return;
+  }
+
+  searching.value = true;
+  try {
+    const result = await retrieveKnowledge(query);
+    searchResult.value = {
+      answer: result.data.answer,
+      references: result.data.references,
+    };
+  } catch (error) {
+    searchResult.value = null;
+    ElMessage.error(error instanceof Error ? error.message : "检索失败");
+  } finally {
+    searching.value = false;
+  }
 }
 
 function resetForm() {
@@ -313,7 +384,8 @@ function formatSize(size: number) {
 }
 
 .knowledge-upload,
-.knowledge-list-panel {
+.knowledge-list-panel,
+.knowledge-search-panel {
   padding: 20px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 20px;
@@ -374,8 +446,52 @@ function formatSize(size: number) {
   margin-bottom: 16px;
 }
 
+.search-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.search-result {
+  min-height: 220px;
+}
+
+.search-answer-card p,
+.retrieval-item p {
+  margin: 0;
+  color: #334155;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.retrieval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.retrieval-item {
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.retrieval-item header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 @media (max-width: 1100px) {
   .upload-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .search-layout {
     grid-template-columns: 1fr;
   }
 

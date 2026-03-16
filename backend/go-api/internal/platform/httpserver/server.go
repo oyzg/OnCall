@@ -2,6 +2,8 @@ package httpserver
 
 import (
 	"github.com/gin-gonic/gin"
+	retrievalApp "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
+	retrievalAPI "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval/api"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
 	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
@@ -33,8 +35,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authHandler := authAPI.NewHandler(authService)
 	knowledgeService := knowledgeApp.NewService()
 	knowledgeHandler := knowledgeAPI.NewHandler(knowledgeService)
+	retrievalService := retrievalApp.NewService(knowledgeService)
+	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
 	sessionService := sessionApp.NewService()
-	sessionHandler := sessionAPI.NewHandler(sessionService)
+	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -83,4 +87,8 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	knowledgeGroup.GET("", knowledgeHandler.ListDocuments)
 	knowledgeGroup.POST("", knowledgeHandler.UploadDocument)
 	knowledgeGroup.GET("/:documentID", knowledgeHandler.GetDocument)
+
+	ragGroup := router.Group("/api/v1/rag")
+	ragGroup.Use(middleware.Auth(authService))
+	ragGroup.POST("/retrieve", retrievalHandler.Retrieve)
 }

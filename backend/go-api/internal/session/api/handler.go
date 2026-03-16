@@ -6,18 +6,22 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
 	sessionApp "github.com/oyzg/OnCall/backend/go-api/internal/session/application"
+	sessionDomain "github.com/oyzg/OnCall/backend/go-api/internal/session/domain"
 	appErrors "github.com/oyzg/OnCall/backend/go-api/pkg/errors"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/response"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/utils"
 )
 
 type Handler struct {
-	service *sessionApp.Service
+	service   *sessionApp.Service
+	retrieval *retrieval.Service
 }
 
 type createSessionRequest struct {
@@ -28,8 +32,11 @@ type streamMessageRequest struct {
 	Content string `json:"content"`
 }
 
-func NewHandler(service *sessionApp.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *sessionApp.Service, retrievalService *retrieval.Service) *Handler {
+	return &Handler{
+		service:   service,
+		retrieval: retrievalService,
+	}
 }
 
 func (h *Handler) CreateSession(c *gin.Context) {
@@ -111,11 +118,15 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		return
 	}
 
-	assistantMessage, chunks, exists := h.service.StartAssistantReply(user, c.Param("sessionID"), content)
+	assistantMessage, exists := h.service.StartAssistantReply(user, c.Param("sessionID"), content)
 	if !exists {
 		writeFailure(c, appErrors.ErrNotFound)
 		return
 	}
+
+	references := h.retrieval.Retrieve(user, content, 3)
+	replyContent := retrieval.BuildAnswer(content, references)
+	replyChunks := splitReplyChunks(replyContent, 18)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -124,7 +135,7 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 	c.Status(http.StatusOK)
 
 	fullReply := strings.Builder{}
-	for _, chunk := range chunks {
+	for _, chunk := range replyChunks {
 		fullReply.WriteString(chunk)
 		writeSSE(c, "chunk", gin.H{
 			"message_id": assistantMessage.ID,
@@ -134,11 +145,19 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		time.Sleep(60 * time.Millisecond)
 	}
 
-	h.service.CompleteAssistantReply(user, c.Param("sessionID"), assistantMessage.ID, fullReply.String())
+	sessionReferences := toSessionReferences(references)
+	h.service.CompleteAssistantReply(
+		user,
+		c.Param("sessionID"),
+		assistantMessage.ID,
+		fullReply.String(),
+		sessionReferences,
+	)
 
 	writeSSE(c, "done", gin.H{
 		"message_id": assistantMessage.ID,
 		"content":    fullReply.String(),
+		"references": sessionReferences,
 	})
 	c.Writer.Flush()
 }
@@ -159,4 +178,35 @@ func requestID(c *gin.Context) string {
 
 func writeFailure(c *gin.Context, appErr appErrors.AppError) {
 	response.Failure(c.Writer, appErr.HTTPStatus, requestID(c), appErr.Code, appErr.Message)
+}
+
+func splitReplyChunks(content string, chunkSize int) []string {
+	if chunkSize <= 0 || utf8.RuneCountInString(content) <= chunkSize {
+		return []string{content}
+	}
+
+	runes := []rune(content)
+	chunks := make([]string, 0, len(runes)/chunkSize+1)
+	for start := 0; start < len(runes); start += chunkSize {
+		end := start + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunks = append(chunks, string(runes[start:end]))
+	}
+	return chunks
+}
+
+func toSessionReferences(references []retrieval.Reference) []sessionDomain.Reference {
+	items := make([]sessionDomain.Reference, 0, len(references))
+	for _, reference := range references {
+		items = append(items, sessionDomain.Reference{
+			DocumentID:    reference.DocumentID,
+			DocumentTitle: reference.DocumentTitle,
+			Category:      reference.Category,
+			Excerpt:       reference.Chunk,
+			Score:         reference.Score,
+		})
+	}
+	return items
 }

@@ -45,7 +45,16 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   status: "streaming" | "completed" | "failed";
+  references?: MessageReference[];
   created_at: string;
+}
+
+export interface MessageReference {
+  document_id: string;
+  document_title: string;
+  category: string;
+  excerpt: string;
+  score: number;
 }
 
 export interface KnowledgeDocument {
@@ -65,6 +74,14 @@ export interface KnowledgeDocument {
   created_at: string;
   updated_at: string;
   processed_at?: string;
+}
+
+export interface RetrievalReference {
+  document_id: string;
+  document_title: string;
+  category: string;
+  chunk: string;
+  score: number;
 }
 
 export async function fetchGoHealth() {
@@ -114,7 +131,11 @@ export async function streamSessionMessage(
   content: string,
   handlers: {
     onChunk?: (payload: { message_id: string; delta: string }) => void;
-    onDone?: (payload: { message_id: string; content: string }) => void;
+    onDone?: (payload: {
+      message_id: string;
+      content: string;
+      references?: MessageReference[];
+    }) => void;
   }
 ) {
   const token = getAccessToken();
@@ -170,7 +191,11 @@ function parseSSEEvent(
   rawEvent: string,
   handlers: {
     onChunk?: (payload: { message_id: string; delta: string }) => void;
-    onDone?: (payload: { message_id: string; content: string }) => void;
+    onDone?: (payload: {
+      message_id: string;
+      content: string;
+      references?: MessageReference[];
+    }) => void;
   }
 ) {
   let eventName = "message";
@@ -245,5 +270,14 @@ export async function uploadKnowledgeDocument(payload: {
       },
     }
   );
+  return response.data;
+}
+
+export async function retrieveKnowledge(query: string) {
+  const response = await http.post<
+    ApiEnvelope<{ query: string; answer: string; references: RetrievalReference[] }>
+  >("/api/v1/rag/retrieve", {
+    query,
+  });
   return response.data;
 }
