@@ -4,6 +4,8 @@ import (
 	"github.com/gin-gonic/gin"
 	retrievalApp "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
 	retrievalAPI "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval/api"
+	alertAPI "github.com/oyzg/OnCall/backend/go-api/internal/alert/api"
+	alertApp "github.com/oyzg/OnCall/backend/go-api/internal/alert/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
 	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
@@ -39,6 +41,9 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
 	sessionService := sessionApp.NewService()
 	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService)
+	alertService := alertApp.NewService(sessionService)
+	alertService.EnsureSeeded()
+	alertHandler := alertAPI.NewHandler(alertService)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -91,4 +96,13 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	ragGroup := router.Group("/api/v1/rag")
 	ragGroup.Use(middleware.Auth(authService))
 	ragGroup.POST("/retrieve", retrievalHandler.Retrieve)
+
+	router.POST("/api/v1/alerts/ingest", alertHandler.Ingest)
+
+	alertGroup := router.Group("/api/v1/alerts")
+	alertGroup.Use(middleware.Auth(authService))
+	alertGroup.GET("", alertHandler.ListAlerts)
+	alertGroup.GET("/:alertID", alertHandler.GetDetail)
+	alertGroup.POST("/:alertID/status", alertHandler.UpdateStatus)
+	alertGroup.POST("/:alertID/session", alertHandler.LinkSession)
 }

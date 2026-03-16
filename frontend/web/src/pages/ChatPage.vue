@@ -14,12 +14,11 @@
           v-for="session in sessions"
           :key="session.id"
           :class="['session-item', { active: session.id === activeSessionId }]"
-          @click="selectSession(session.id)"
         >
-          <div>
+          <button class="session-button" type="button" @click="selectSession(session.id)">
             <strong>{{ session.title }}</strong>
             <small>{{ formatTime(session.updated_at) }}</small>
-          </div>
+          </button>
           <el-button text type="danger" @click.stop="handleDeleteSession(session.id)">删除</el-button>
         </div>
       </div>
@@ -67,17 +66,23 @@
       </div>
 
       <div class="composer">
-        <el-input
-          v-model="draft"
-          type="textarea"
-          :rows="4"
-          resize="none"
+        <textarea
+          ref="composerTextareaRef"
+          :value="draft"
+          class="composer-textarea"
           :disabled="sending"
           placeholder="输入你的排障问题、告警上下文或要查询的系统信息"
+          @click="focusComposer"
+          @input="handleDraftInput"
+          @keydown.enter.exact.prevent="handleSend"
+          @keydown.ctrl.enter.prevent="handleSend"
+          @keydown.meta.enter.prevent="handleSend"
         />
         <div class="composer-actions">
-          <span>当前会结合知识库返回引用片段，下一阶段再接工具调用和更完整的 AI 编排。</span>
-          <el-button type="primary" :loading="sending" @click="handleSend">发送消息</el-button>
+          <span>当前会结合知识库返回引用片段，`Enter`、`Ctrl+Enter` / `Cmd+Enter` 都可以发送。</span>
+          <button class="send-button" type="button" :disabled="sending" @click="handleSend">
+            {{ sending ? "发送中..." : "发送消息" }}
+          </button>
         </div>
       </div>
     </section>
@@ -87,6 +92,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
+import { useRoute, useRouter } from "vue-router";
 
 import {
   createSession,
@@ -104,6 +110,10 @@ const messages = ref<ChatMessage[]>([]);
 const draft = ref("");
 const sending = ref(false);
 const messageListRef = ref<HTMLElement | null>(null);
+const composerTextareaRef = ref<HTMLTextAreaElement | null>(null);
+const sessionLoadToken = ref(0);
+const route = useRoute();
+const router = useRouter();
 
 const activeSession = computed(() =>
   sessions.value.find((session) => session.id === activeSessionId.value) || null
@@ -111,21 +121,38 @@ const activeSession = computed(() =>
 
 onMounted(async () => {
   await loadSessions();
+  await focusComposer();
 });
 
 async function loadSessions() {
   const result = await fetchSessions();
   sessions.value = result.data.sessions;
+  const preferredSessionId = typeof route.query.sessionId === "string" ? route.query.sessionId : "";
+
+  if (preferredSessionId && sessions.value.some((session) => session.id === preferredSessionId)) {
+    await selectSession(preferredSessionId);
+    await router.replace({ path: "/chat" });
+    return;
+  }
+
   if (!activeSessionId.value && sessions.value.length > 0) {
     await selectSession(sessions.value[0].id);
   }
 }
 
 async function selectSession(sessionId: string) {
+  const currentLoadToken = ++sessionLoadToken.value;
   activeSessionId.value = sessionId;
+  messages.value = [];
   const result = await fetchSessionMessages(sessionId);
-  messages.value = result.data.messages;
+
+  if (currentLoadToken !== sessionLoadToken.value || activeSessionId.value !== sessionId) {
+    return;
+  }
+
+  messages.value = Array.isArray(result.data.messages) ? result.data.messages : [];
   await scrollToBottom();
+  await focusComposer();
 }
 
 async function handleCreateSession() {
@@ -134,6 +161,7 @@ async function handleCreateSession() {
   sessions.value = [session, ...sessions.value];
   activeSessionId.value = session.id;
   messages.value = [];
+  await focusComposer();
 }
 
 async function ensureActiveSession() {
@@ -165,36 +193,40 @@ async function handleDeleteSession(sessionId: string) {
 }
 
 async function handleSend() {
-  const content = draft.value.trim();
-  if (!content || sending.value) {
-    return;
-  }
-
-  const sessionId = await ensureActiveSession();
-  const now = new Date().toISOString();
-  const userMessage: ChatMessage = {
-    id: `local-user-${Date.now()}`,
-    session_id: sessionId,
-    role: "user",
-    content,
-    status: "completed",
-    created_at: now,
-  };
-  const assistantMessage: ChatMessage = {
-    id: `local-assistant-${Date.now()}`,
-    session_id: sessionId,
-    role: "assistant",
-    content: "",
-    status: "streaming",
-    created_at: now,
-  };
-
-  messages.value = [...messages.value, userMessage, assistantMessage];
-  draft.value = "";
-  sending.value = true;
-  await scrollToBottom();
-
   try {
+    const content = (composerTextareaRef.value?.value || draft.value).trim();
+    if (!content || sending.value) {
+      return;
+    }
+
+    const sessionId = await ensureActiveSession();
+    const now = new Date().toISOString();
+    const userMessage: ChatMessage = {
+      id: `local-user-${Date.now()}`,
+      session_id: sessionId,
+      role: "user",
+      content,
+      status: "completed",
+      created_at: now,
+    };
+    const assistantMessage: ChatMessage = {
+      id: `local-assistant-${Date.now()}`,
+      session_id: sessionId,
+      role: "assistant",
+      content: "",
+      status: "streaming",
+      created_at: now,
+    };
+
+    const currentMessages = Array.isArray(messages.value) ? messages.value : [];
+    messages.value = [...currentMessages, userMessage, assistantMessage];
+    draft.value = "";
+    if (composerTextareaRef.value) {
+      composerTextareaRef.value.value = "";
+    }
+    sending.value = true;
+    await scrollToBottom();
+
     await streamSessionMessage(sessionId, content, {
       onChunk: async ({ message_id, delta }) => {
         const target = messages.value.find((item) => item.id === assistantMessage.id || item.id === message_id);
@@ -223,13 +255,16 @@ async function handleSend() {
     await loadSessions();
     await selectSession(sessionId);
   } catch (error) {
-    assistantMessage.status = "failed";
-    assistantMessage.content = "消息发送失败，请稍后重试。";
     ElMessage.error(error instanceof Error ? error.message : "消息发送失败");
   } finally {
     sending.value = false;
     await scrollToBottom();
+    await focusComposer();
   }
+}
+
+function handleDraftInput(event: Event) {
+  draft.value = (event.target as HTMLTextAreaElement).value;
 }
 
 function formatTime(value: string) {
@@ -249,6 +284,11 @@ async function scrollToBottom() {
   }
   messageListRef.value.scrollTop = messageListRef.value.scrollHeight;
 }
+
+async function focusComposer() {
+  await nextTick();
+  composerTextareaRef.value?.focus();
+}
 </script>
 
 <style scoped>
@@ -256,11 +296,13 @@ async function scrollToBottom() {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 20px;
-  min-height: calc(100vh - 220px);
+  height: calc(100vh - 170px);
+  min-height: 720px;
 }
 
 .chat-sidebar,
 .chat-panel {
+  min-height: 0;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.92);
@@ -268,7 +310,10 @@ async function scrollToBottom() {
 }
 
 .chat-sidebar {
+  display: flex;
+  flex-direction: column;
   padding: 20px;
+  overflow: hidden;
 }
 
 .sidebar-header,
@@ -299,6 +344,9 @@ async function scrollToBottom() {
   flex-direction: column;
   gap: 12px;
   margin-top: 20px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .session-item {
@@ -312,12 +360,24 @@ async function scrollToBottom() {
   border-radius: 16px;
   background: #fff;
   text-align: left;
-  cursor: pointer;
 }
 
 .session-item.active {
   border-color: rgba(14, 116, 144, 0.45);
   background: rgba(240, 249, 255, 0.9);
+}
+
+.session-button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
 }
 
 .session-item strong,
@@ -335,6 +395,7 @@ async function scrollToBottom() {
   display: flex;
   flex-direction: column;
   padding: 20px;
+  overflow: hidden;
 }
 
 .message-list {
@@ -342,8 +403,7 @@ async function scrollToBottom() {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: 420px;
-  max-height: 620px;
+  min-height: 0;
   margin: 20px 0;
   padding: 8px 4px 8px 0;
   overflow: auto;
@@ -418,14 +478,60 @@ async function scrollToBottom() {
 }
 
 .composer {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.composer-textarea {
+  width: 100%;
+  min-height: 116px;
+  padding: 14px 16px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  outline: none;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.7;
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.composer-textarea:focus {
+  border-color: #4f7cff;
+  box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.12);
+}
+
+.composer-textarea:disabled {
+  background: rgba(241, 245, 249, 0.92);
+  cursor: not-allowed;
+}
+
+.send-button {
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 18px;
+  background: #4f7cff;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.send-button:disabled {
+  background: rgba(79, 124, 255, 0.55);
+  cursor: not-allowed;
 }
 
 @media (max-width: 1100px) {
   .chat-workspace {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
   }
 
   .message-bubble {

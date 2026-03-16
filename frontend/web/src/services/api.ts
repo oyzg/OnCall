@@ -84,6 +84,32 @@ export interface RetrievalReference {
   score: number;
 }
 
+export interface AlertItem {
+  id: string;
+  title: string;
+  service: string;
+  environment: string;
+  severity: "P0" | "P1" | "P2" | "P3";
+  source: string;
+  status: "open" | "acknowledged" | "investigating" | "resolved";
+  summary: string;
+  description: string;
+  labels?: Record<string, string>;
+  linked_session_id?: string;
+  created_at: string;
+  updated_at: string;
+  triggered_at: string;
+}
+
+export interface AlertRecord {
+  id: string;
+  alert_id: string;
+  action: string;
+  operator: string;
+  comment: string;
+  created_at: string;
+}
+
 export async function fetchGoHealth() {
   const response = await http.get("/healthz");
   return response.data;
@@ -279,5 +305,32 @@ export async function retrieveKnowledge(query: string) {
   >("/api/v1/rag/retrieve", {
     query,
   });
+  return response.data;
+}
+
+export async function fetchAlerts(params?: { status?: string; severity?: string; service?: string }) {
+  const response = await http.get<ApiEnvelope<{ alerts: AlertItem[] }>>("/api/v1/alerts", { params });
+  return response.data;
+}
+
+export async function fetchAlertDetail(alertId: string) {
+  const response = await http.get<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
+    `/api/v1/alerts/${alertId}`
+  );
+  return response.data;
+}
+
+export async function updateAlertStatus(alertId: string, payload: { status: string; comment: string }) {
+  const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
+    `/api/v1/alerts/${alertId}/status`,
+    payload
+  );
+  return response.data;
+}
+
+export async function linkAlertSession(alertId: string) {
+  const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
+    `/api/v1/alerts/${alertId}/session`
+  );
   return response.data;
 }
