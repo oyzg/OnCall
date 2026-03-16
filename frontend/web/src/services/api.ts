@@ -193,6 +193,31 @@ export interface ToolCallLog {
   created_at: string;
 }
 
+export interface AuditLog {
+  id: string;
+  category: string;
+  action: string;
+  status: "success" | "failed";
+  actor_id?: string;
+  actor_name?: string;
+  actor_roles?: string[];
+  target_type?: string;
+  target_id?: string;
+  target_name?: string;
+  detail?: string;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AuditStats {
+  total: number;
+  success: number;
+  failed: number;
+  last_24_hours: number;
+  unique_actors: number;
+  by_category: Record<string, number>;
+}
+
 export async function fetchGoHealth() {
   const response = await http.get("/healthz");
   return response.data;
@@ -465,5 +490,23 @@ export async function fetchToolLogs(params?: { tool_name?: string; status?: stri
   const response = await http.get<ApiEnvelope<{ logs: ToolCallLog[] }>>("/api/v1/tools/logs", {
     params,
   });
+  return response.data;
+}
+
+export async function fetchAuditLogs(params?: {
+  category?: string;
+  action?: string;
+  status?: string;
+  actor?: string;
+  limit?: number;
+}) {
+  const response = await http.get<ApiEnvelope<{ logs: AuditLog[]; categories: string[] }>>("/api/v1/audit/logs", {
+    params,
+  });
+  return response.data;
+}
+
+export async function fetchAuditStats() {
+  const response = await http.get<ApiEnvelope<{ stats: AuditStats }>>("/api/v1/audit/stats");
   return response.data;
 }

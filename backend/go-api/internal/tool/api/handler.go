@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
 	toolApp "github.com/oyzg/OnCall/backend/go-api/internal/tool/application"
@@ -16,14 +17,15 @@ import (
 
 type Handler struct {
 	service *toolApp.Service
+	audit   *auditApp.Service
 }
 
 type callToolRequest struct {
 	Parameters map[string]any `json:"parameters"`
 }
 
-func NewHandler(service *toolApp.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *toolApp.Service, auditService *auditApp.Service) *Handler {
+	return &Handler{service: service, audit: auditService}
 }
 
 func (h *Handler) ListTools(c *gin.Context) {
@@ -53,6 +55,10 @@ func (h *Handler) CallTool(c *gin.Context) {
 
 	result, err := h.service.CallTool(user, c.Param("toolName"), req.Parameters)
 	if err != nil {
+		h.record(user, c.Param("toolName"), "failed", "工具调用失败。", map[string]any{
+			"parameters": req.Parameters,
+			"error":      err.Error(),
+		})
 		if appErr, ok := err.(appErrors.AppError); ok {
 			writeFailure(c, appErr)
 			return
@@ -60,6 +66,9 @@ func (h *Handler) CallTool(c *gin.Context) {
 		response.Failure(c.Writer, http.StatusBadRequest, requestID(c), "TOOL_EXECUTION_FAILED", err.Error())
 		return
 	}
+	h.record(user, c.Param("toolName"), "success", "工具调用成功。", map[string]any{
+		"parameters": req.Parameters,
+	})
 
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
 		"result": result,
@@ -94,4 +103,21 @@ func requestID(c *gin.Context) string {
 
 func writeFailure(c *gin.Context, appErr appErrors.AppError) {
 	response.Failure(c.Writer, appErr.HTTPStatus, requestID(c), appErr.Code, appErr.Message)
+}
+
+func (h *Handler) record(user authDomain.User, toolName, status, detail string, metadata map[string]any) {
+	if h.audit == nil {
+		return
+	}
+	h.audit.Record(auditApp.RecordInput{
+		Category:   "tool",
+		Action:     "call",
+		Status:     status,
+		Actor:      &user,
+		TargetType: "tool",
+		TargetID:   toolName,
+		TargetName: toolName,
+		Detail:     detail,
+		Metadata:   metadata,
+	})
 }

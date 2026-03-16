@@ -9,6 +9,8 @@ import (
 	retrievalAPI "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval/api"
 	alertAPI "github.com/oyzg/OnCall/backend/go-api/internal/alert/api"
 	alertApp "github.com/oyzg/OnCall/backend/go-api/internal/alert/application"
+	auditAPI "github.com/oyzg/OnCall/backend/go-api/internal/audit/api"
+	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
 	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
@@ -39,21 +41,23 @@ func New(cfg config.Config, log *logger.Logger) *gin.Engine {
 
 func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authService := authApp.NewService(cfg.Auth)
-	authHandler := authAPI.NewHandler(authService)
+	auditService := auditApp.NewService()
+	authHandler := authAPI.NewHandler(authService, auditService)
+	auditHandler := auditAPI.NewHandler(auditService)
 	knowledgeService := knowledgeApp.NewService()
-	knowledgeHandler := knowledgeAPI.NewHandler(knowledgeService)
+	knowledgeHandler := knowledgeAPI.NewHandler(knowledgeService, auditService)
 	retrievalService := retrievalApp.NewService(knowledgeService)
 	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
 	sessionService := sessionApp.NewService()
-	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService)
+	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, auditService)
 	aiClient := gateway.NewHTTPClient(cfg.AI)
 	orchestrator := eino.NewStubOrchestrator(aiClient)
 	alertAnalyzer := aiAnalyzer.NewService(orchestrator)
 	alertService := alertApp.NewService(sessionService, alertAnalyzer)
 	alertService.EnsureSeeded()
-	alertHandler := alertAPI.NewHandler(alertService)
+	alertHandler := alertAPI.NewHandler(alertService, auditService)
 	toolService := toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
-	toolHandler := toolAPI.NewHandler(toolService)
+	toolHandler := toolAPI.NewHandler(toolService, auditService)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -125,4 +129,9 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	toolGroup.GET("", toolHandler.ListTools)
 	toolGroup.GET("/logs", toolHandler.ListLogs)
 	toolGroup.POST("/:toolName/call", toolHandler.CallTool)
+
+	auditGroup := router.Group("/api/v1/audit")
+	auditGroup.Use(middleware.Auth(authService))
+	auditGroup.GET("/logs", auditHandler.ListLogs)
+	auditGroup.GET("/stats", auditHandler.Stats)
 }

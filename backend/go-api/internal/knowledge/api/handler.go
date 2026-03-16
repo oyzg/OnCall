@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
 	knowledgeApp "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/application"
@@ -17,10 +18,11 @@ import (
 
 type Handler struct {
 	service *knowledgeApp.Service
+	audit   *auditApp.Service
 }
 
-func NewHandler(service *knowledgeApp.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *knowledgeApp.Service, auditService *auditApp.Service) *Handler {
+	return &Handler{service: service, audit: auditService}
 }
 
 func (h *Handler) UploadDocument(c *gin.Context) {
@@ -79,6 +81,11 @@ func (h *Handler) UploadDocument(c *gin.Context) {
 		return
 	}
 
+	h.record(user, "upload", "success", document.ID, document.Title, "知识文档已上传。", map[string]any{
+		"category":    document.Category,
+		"source_type": document.SourceType,
+		"status":      document.Status,
+	})
 	response.Success(c.Writer, http.StatusCreated, requestID(c), gin.H{"document": document})
 }
 
@@ -127,6 +134,7 @@ func (h *Handler) DeleteDocument(c *gin.Context) {
 		return
 	}
 
+	h.record(user, "delete", "success", c.Param("documentID"), "", "知识文档已删除。", nil)
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"deleted": true})
 }
 
@@ -143,6 +151,9 @@ func (h *Handler) RetryDocument(c *gin.Context) {
 		return
 	}
 
+	h.record(user, "reprocess", "success", document.ID, document.Title, "知识文档已重新处理。", map[string]any{
+		"status": document.Status,
+	})
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"document": document})
 }
 
@@ -164,4 +175,29 @@ func parsePositiveInt(raw string) int {
 		return 0
 	}
 	return value
+}
+
+func (h *Handler) record(
+	user authDomain.User,
+	action string,
+	status string,
+	targetID string,
+	targetName string,
+	detail string,
+	metadata map[string]any,
+) {
+	if h.audit == nil {
+		return
+	}
+	h.audit.Record(auditApp.RecordInput{
+		Category:   "knowledge",
+		Action:     action,
+		Status:     status,
+		Actor:      &user,
+		TargetType: "document",
+		TargetID:   targetID,
+		TargetName: targetName,
+		Detail:     detail,
+		Metadata:   metadata,
+	})
 }

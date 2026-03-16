@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
+	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
 	sessionApp "github.com/oyzg/OnCall/backend/go-api/internal/session/application"
@@ -23,6 +24,7 @@ import (
 type Handler struct {
 	service   *sessionApp.Service
 	retrieval *retrieval.Service
+	audit     *auditApp.Service
 }
 
 type createSessionRequest struct {
@@ -33,10 +35,11 @@ type streamMessageRequest struct {
 	Content string `json:"content"`
 }
 
-func NewHandler(service *sessionApp.Service, retrievalService *retrieval.Service) *Handler {
+func NewHandler(service *sessionApp.Service, retrievalService *retrieval.Service, auditService *auditApp.Service) *Handler {
 	return &Handler{
 		service:   service,
 		retrieval: retrievalService,
+		audit:     auditService,
 	}
 }
 
@@ -54,6 +57,9 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	}
 
 	session := h.service.CreateSession(user, req.Title)
+	h.record(user, "session", "create", "success", session.ID, session.Title, "已创建会话。", map[string]any{
+		"title": session.Title,
+	})
 	response.Success(c.Writer, http.StatusCreated, requestID(c), gin.H{"session": session})
 }
 
@@ -85,6 +91,7 @@ func (h *Handler) DeleteSession(c *gin.Context) {
 		return
 	}
 
+	h.record(user, "session", "delete", "success", c.Param("sessionID"), "", "已删除会话。", nil)
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{"deleted": true})
 }
 
@@ -138,6 +145,9 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		writeFailure(c, appErrors.ErrNotFound)
 		return
 	}
+	h.record(user, "session", "send_message", "success", c.Param("sessionID"), "", "用户发送了一条消息。", map[string]any{
+		"content_length": len([]rune(content)),
+	})
 
 	references := h.retrieval.Retrieve(user, content, 3)
 	replyContent := retrieval.BuildAnswer(content, references)
@@ -232,4 +242,30 @@ func parsePositiveInt(raw string) int {
 		return 0
 	}
 	return value
+}
+
+func (h *Handler) record(
+	user authDomain.User,
+	category string,
+	action string,
+	status string,
+	targetID string,
+	targetName string,
+	detail string,
+	metadata map[string]any,
+) {
+	if h.audit == nil {
+		return
+	}
+	h.audit.Record(auditApp.RecordInput{
+		Category:   category,
+		Action:     action,
+		Status:     status,
+		Actor:      &user,
+		TargetType: "session",
+		TargetID:   targetID,
+		TargetName: targetName,
+		Detail:     detail,
+		Metadata:   metadata,
+	})
 }

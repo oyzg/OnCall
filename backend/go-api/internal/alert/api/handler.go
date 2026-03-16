@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	alertApp "github.com/oyzg/OnCall/backend/go-api/internal/alert/application"
+	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
 	appErrors "github.com/oyzg/OnCall/backend/go-api/pkg/errors"
@@ -15,6 +16,7 @@ import (
 
 type Handler struct {
 	service *alertApp.Service
+	audit   *auditApp.Service
 }
 
 type ingestRequest struct {
@@ -33,8 +35,8 @@ type updateStatusRequest struct {
 	Comment string `json:"comment"`
 }
 
-func NewHandler(service *alertApp.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *alertApp.Service, auditService *auditApp.Service) *Handler {
+	return &Handler{service: service, audit: auditService}
 }
 
 func (h *Handler) Ingest(c *gin.Context) {
@@ -53,6 +55,20 @@ func (h *Handler) Ingest(c *gin.Context) {
 		Summary:     req.Summary,
 		Description: req.Description,
 		Labels:      req.Labels,
+	})
+	h.audit.Record(auditApp.RecordInput{
+		Category:   "alert",
+		Action:     "ingest",
+		Status:     "success",
+		TargetType: "alert",
+		TargetID:   alert.ID,
+		TargetName: alert.Title,
+		Detail:     "外部告警已接入平台。",
+		Metadata: map[string]any{
+			"service":     alert.Service,
+			"environment": alert.Environment,
+			"severity":    alert.Severity,
+		},
 	})
 
 	response.Success(c.Writer, http.StatusCreated, requestID(c), gin.H{"alert": alert})
@@ -108,6 +124,9 @@ func (h *Handler) UpdateStatus(c *gin.Context) {
 		writeFailure(c, appErrors.ErrNotFound)
 		return
 	}
+	h.record(user, "update_status", detail.Alert.ID, detail.Alert.Title, "告警状态已更新。", map[string]any{
+		"status": detail.Alert.Status,
+	})
 
 	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
 }
@@ -124,6 +143,9 @@ func (h *Handler) LinkSession(c *gin.Context) {
 		writeFailure(c, appErrors.ErrNotFound)
 		return
 	}
+	h.record(user, "link_session", detail.Alert.ID, detail.Alert.Title, "告警已关联排障会话。", map[string]any{
+		"linked_session_id": detail.Alert.LinkedSessionID,
+	})
 
 	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
 }
@@ -140,6 +162,10 @@ func (h *Handler) Analyze(c *gin.Context) {
 		writeFailure(c, appErrors.ErrNotFound)
 		return
 	}
+	h.record(user, "analyze", detail.Alert.ID, detail.Alert.Title, "告警 AI 分析已生成。", map[string]any{
+		"analysis_status": detail.Alert.Analysis.Status,
+		"analysis_source": detail.Alert.Analysis.Source,
+	})
 
 	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
 }
@@ -154,4 +180,28 @@ func requestID(c *gin.Context) string {
 
 func writeFailure(c *gin.Context, appErr appErrors.AppError) {
 	response.Failure(c.Writer, appErr.HTTPStatus, requestID(c), appErr.Code, appErr.Message)
+}
+
+func (h *Handler) record(
+	user authDomain.User,
+	action string,
+	targetID string,
+	targetName string,
+	detail string,
+	metadata map[string]any,
+) {
+	if h.audit == nil {
+		return
+	}
+	h.audit.Record(auditApp.RecordInput{
+		Category:   "alert",
+		Action:     action,
+		Status:     "success",
+		Actor:      &user,
+		TargetType: "alert",
+		TargetID:   targetID,
+		TargetName: targetName,
+		Detail:     detail,
+		Metadata:   metadata,
+	})
 }
