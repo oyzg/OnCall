@@ -2,6 +2,9 @@ package httpserver
 
 import (
 	"github.com/gin-gonic/gin"
+	aiAnalyzer "github.com/oyzg/OnCall/backend/go-api/internal/ai/analyzer"
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/eino"
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/gateway"
 	retrievalApp "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
 	retrievalAPI "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval/api"
 	alertAPI "github.com/oyzg/OnCall/backend/go-api/internal/alert/api"
@@ -43,7 +46,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
 	sessionService := sessionApp.NewService()
 	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService)
-	alertService := alertApp.NewService(sessionService)
+	aiClient := gateway.NewHTTPClient(cfg.AI)
+	orchestrator := eino.NewStubOrchestrator(aiClient)
+	alertAnalyzer := aiAnalyzer.NewService(orchestrator)
+	alertService := alertApp.NewService(sessionService, alertAnalyzer)
 	alertService.EnsureSeeded()
 	alertHandler := alertAPI.NewHandler(alertService)
 	toolService := toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
@@ -112,6 +118,7 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	alertGroup.GET("/:alertID", alertHandler.GetDetail)
 	alertGroup.POST("/:alertID/status", alertHandler.UpdateStatus)
 	alertGroup.POST("/:alertID/session", alertHandler.LinkSession)
+	alertGroup.POST("/:alertID/analyze", alertHandler.Analyze)
 
 	toolGroup := router.Group("/api/v1/tools")
 	toolGroup.Use(middleware.Auth(authService))

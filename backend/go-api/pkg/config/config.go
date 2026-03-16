@@ -40,6 +40,8 @@ type RedisConfig struct {
 }
 
 type AIConfig struct {
+	HTTPBaseURL string
+	HTTPTimeout time.Duration
 	GRPCTarget  string
 	PingTimeout time.Duration
 }
@@ -72,6 +74,8 @@ func Load() Config {
 			PingTimeout: getDuration("REDIS_PING_TIMEOUT_SECONDS", 2*time.Second),
 		},
 		AI: AIConfig{
+			HTTPBaseURL: getEnv("AI_HTTP_BASE_URL", "http://127.0.0.1:8000"),
+			HTTPTimeout: getDuration("AI_HTTP_TIMEOUT_SECONDS", 8*time.Second),
 			GRPCTarget:  getEnv("GRPC_AI_TARGET", "127.0.0.1:50051"),
 			PingTimeout: getDuration("AI_GRPC_PING_TIMEOUT_SECONDS", 2*time.Second),
 		},

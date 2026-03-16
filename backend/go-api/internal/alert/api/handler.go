@@ -128,6 +128,22 @@ func (h *Handler) LinkSession(c *gin.Context) {
 	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
 }
 
+func (h *Handler) Analyze(c *gin.Context) {
+	user, ok := currentUser(c)
+	if !ok {
+		writeFailure(c, appErrors.ErrUnauthorized)
+		return
+	}
+
+	detail, exists := h.service.Analyze(user, c.Param("alertID"))
+	if !exists {
+		writeFailure(c, appErrors.ErrNotFound)
+		return
+	}
+
+	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
+}
+
 func currentUser(c *gin.Context) (authDomain.User, bool) {
 	return authAPI.CurrentUser(c)
 }

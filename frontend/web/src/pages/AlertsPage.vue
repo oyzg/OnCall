@@ -88,12 +88,10 @@
               <p>{{ activeAlert.summary }}</p>
             </div>
             <div class="detail-actions">
-              <el-button
-                type="primary"
-                plain
-                :disabled="linkingSession"
-                @click="handleLinkSession"
-              >
+              <el-button plain :loading="analyzingAlert" @click="handleAnalyzeAlert">
+                {{ alertAnalysis ? "刷新 AI 分析" : "生成 AI 分析" }}
+              </el-button>
+              <el-button type="primary" plain :disabled="linkingSession" @click="handleLinkSession">
                 {{ activeAlert.linked_session_id ? "进入排障会话" : "创建排障会话" }}
               </el-button>
             </div>
@@ -141,6 +139,65 @@
             </el-button>
           </div>
 
+          <div class="analysis-block">
+            <div class="analysis-header">
+              <h4>AI 分析</h4>
+              <div v-if="alertAnalysis" class="analysis-meta">
+                <el-tag size="small" :type="analysisTagType(alertAnalysis.status)">
+                  {{ alertAnalysis.status }}
+                </el-tag>
+                <span>{{ formatTime(alertAnalysis.generated_at) }}</span>
+                <span>{{ alertAnalysis.source }}</span>
+              </div>
+            </div>
+
+            <div v-if="alertAnalysis" class="analysis-card">
+              <p class="analysis-summary">{{ alertAnalysis.summary }}</p>
+              <p class="analysis-assessment">{{ alertAnalysis.severity_assessment }}</p>
+
+              <div class="analysis-grid">
+                <div>
+                  <h5>可能原因</h5>
+                  <ul>
+                    <li v-for="cause in alertAnalysis.possible_causes" :key="cause">{{ cause }}</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5>建议动作</h5>
+                  <ul>
+                    <li v-for="action in alertAnalysis.suggested_actions" :key="action">{{ action }}</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div class="analysis-tags">
+                <div>
+                  <h5>推荐工具</h5>
+                  <div class="labels-list">
+                    <el-tag v-for="tool in alertAnalysis.recommended_tools" :key="tool" size="small">
+                      {{ tool }}
+                    </el-tag>
+                  </div>
+                </div>
+                <div>
+                  <h5>知识检索建议</h5>
+                  <div class="labels-list">
+                    <el-tag v-for="query in alertAnalysis.knowledge_queries" :key="query" size="small" type="info">
+                      {{ query }}
+                    </el-tag>
+                  </div>
+                </div>
+              </div>
+
+              <p class="analysis-footer">
+                工作流：{{ alertAnalysis.workflow || "-" }} · 置信度：{{ alertAnalysis.confidence || "-" }}
+              </p>
+              <p v-if="alertAnalysis.error" class="analysis-error">{{ alertAnalysis.error }}</p>
+            </div>
+
+            <el-empty v-else description="当前还没有 AI 分析结果，点击上方按钮生成。" />
+          </div>
+
           <div class="timeline-block">
             <h4>处理时间线</h4>
             <el-timeline>
@@ -170,10 +227,12 @@ import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
 
 import {
+  analyzeAlert,
   fetchAlertDetail,
   fetchAlerts,
   linkAlertSession,
   updateAlertStatus,
+  type AlertAnalysis,
   type AlertItem,
   type AlertRecord,
   type AlertStats,
@@ -194,9 +253,11 @@ const stats = ref<AlertStats>({
 });
 const updatingStatus = ref(false);
 const linkingSession = ref(false);
+const analyzingAlert = ref(false);
 const nextStatus = ref("");
 const statusComment = ref("");
 const labelEntries = computed(() => Object.entries(activeAlert.value?.labels || {}));
+const alertAnalysis = computed<AlertAnalysis | null>(() => activeAlert.value?.analysis || null);
 
 const filters = reactive({
   status: "",
@@ -293,6 +354,25 @@ async function handleLinkSession() {
   }
 }
 
+async function handleAnalyzeAlert() {
+  if (!activeAlert.value) {
+    return;
+  }
+
+  analyzingAlert.value = true;
+  try {
+    const result = await analyzeAlert(activeAlert.value.id);
+    activeAlert.value = result.data.alert;
+    alertRecords.value = result.data.records;
+    ElMessage.success("AI 分析已更新");
+    await loadAlerts();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "AI 分析失败");
+  } finally {
+    analyzingAlert.value = false;
+  }
+}
+
 function statusTagType(status: AlertItem["status"]) {
   if (status === "resolved") {
     return "success";
@@ -314,6 +394,16 @@ function severityTagType(severity: AlertItem["severity"]) {
     return "warning";
   }
   return "info";
+}
+
+function analysisTagType(status: AlertAnalysis["status"]) {
+  if (status === "ready") {
+    return "success";
+  }
+  if (status === "stale") {
+    return "warning";
+  }
+  return "danger";
 }
 
 function formatTime(value: string) {
@@ -401,11 +491,17 @@ function formatTime(value: string) {
 }
 
 .detail-header,
-.status-panel {
+.status-panel,
+.analysis-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 12px;
 }
 
 .detail-descriptions {
@@ -424,6 +520,75 @@ function formatTime(value: string) {
 
 .status-panel :deep(.el-select) {
   width: 180px;
+}
+
+.analysis-block {
+  margin-top: 24px;
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.92);
+}
+
+.analysis-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.analysis-header {
+  margin-bottom: 14px;
+}
+
+.analysis-header h4 {
+  margin: 0;
+}
+
+.analysis-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.analysis-summary,
+.analysis-assessment,
+.analysis-footer,
+.analysis-error {
+  margin: 0;
+}
+
+.analysis-assessment,
+.analysis-footer {
+  color: #475569;
+}
+
+.analysis-error {
+  color: #dc2626;
+}
+
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.analysis-grid h5,
+.analysis-tags h5 {
+  margin: 0 0 10px;
+}
+
+.analysis-grid ul {
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.analysis-tags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .timeline-block {
@@ -445,9 +610,16 @@ function formatTime(value: string) {
   .section-heading,
   .filter-row,
   .detail-header,
-  .status-panel {
+  .status-panel,
+  .analysis-header,
+  .detail-actions {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .analysis-grid,
+  .analysis-tags {
+    grid-template-columns: 1fr;
   }
 
   .filter-row :deep(.el-select),

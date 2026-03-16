@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -53,8 +54,13 @@ type Service struct {
 	alerts      map[string]alertDomain.Alert
 	records     map[string][]alertDomain.HandlingRecord
 	sessionSvc  *sessionApp.Service
+	analyzer    Analyzer
 	seedOnce    sync.Once
 	storagePath string
+}
+
+type Analyzer interface {
+	AnalyzeAlert(ctx context.Context, user authDomain.User, alert alertDomain.Alert) alertDomain.AlertAnalysis
 }
 
 type store struct {
@@ -62,11 +68,12 @@ type store struct {
 	Records map[string][]alertDomain.HandlingRecord `json:"records"`
 }
 
-func NewService(sessionSvc *sessionApp.Service) *Service {
+func NewService(sessionSvc *sessionApp.Service, analyzer Analyzer) *Service {
 	service := &Service{
 		alerts:      make(map[string]alertDomain.Alert),
 		records:     make(map[string][]alertDomain.HandlingRecord),
 		sessionSvc:  sessionSvc,
+		analyzer:    analyzer,
 		storagePath: filepath.Join("tmp", "alerts", "alerts.json"),
 	}
 	service.load()
@@ -238,6 +245,50 @@ func (s *Service) LinkSession(user authDomain.User, alertID string) (Detail, boo
 	return s.detailLocked(alertID), true
 }
 
+func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
+	s.mu.Lock()
+	alert, ok := s.alerts[alertID]
+	if !ok {
+		s.mu.Unlock()
+		return Detail{}, false
+	}
+	s.mu.Unlock()
+
+	analysis := alertDomain.AlertAnalysis{
+		Status:      "failed",
+		Summary:     "当前分析器未初始化，无法生成告警分析结果。",
+		Source:      "go-alert-service",
+		GeneratedAt: time.Now(),
+		Error:       "analyzer unavailable",
+	}
+	if s.analyzer != nil {
+		analysis = s.analyzer.AnalyzeAlert(context.Background(), user, alert)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	alert, ok = s.alerts[alertID]
+	if !ok {
+		return Detail{}, false
+	}
+
+	alert.Analysis = &analysis
+	alert.UpdatedAt = time.Now()
+	s.alerts[alertID] = alert
+	s.records[alertID] = append(s.records[alertID], alertDomain.HandlingRecord{
+		ID:        nextID("record"),
+		AlertID:   alertID,
+		Action:    "ai_analysis",
+		Operator:  displayOperator(user),
+		Comment:   buildAnalysisComment(analysis),
+		CreatedAt: time.Now(),
+	})
+	s.persistLocked()
+
+	return s.detailLocked(alertID), true
+}
+
 func (s *Service) mustIngest(input IngestInput) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -281,6 +332,10 @@ func (s *Service) ingestLocked(input IngestInput) alertDomain.Alert {
 		existing.UpdatedAt = now
 		existing.LastTriggeredAt = triggeredAt
 		existing.OccurrenceCount++
+		if existing.Analysis != nil {
+			existing.Analysis.Status = "stale"
+			existing.Analysis.Error = ""
+		}
 		s.alerts[existingID] = existing
 		s.records[existingID] = append(s.records[existingID], alertDomain.HandlingRecord{
 			ID:        nextID("record"),
@@ -441,6 +496,13 @@ func buildStatusComment(status, comment string) string {
 		return fmt.Sprintf("告警状态变更为 %s。", status)
 	}
 	return fmt.Sprintf("告警状态变更为 %s。%s", status, strings.TrimSpace(comment))
+}
+
+func buildAnalysisComment(analysis alertDomain.AlertAnalysis) string {
+	if strings.TrimSpace(analysis.Summary) == "" {
+		return "AI 分析已执行。"
+	}
+	return fmt.Sprintf("AI 分析已更新：%s", analysis.Summary)
 }
 
 func displayOperator(user authDomain.User) string {

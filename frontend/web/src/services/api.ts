@@ -119,6 +119,7 @@ export interface AlertItem {
   description: string;
   labels?: Record<string, string>;
   linked_session_id?: string;
+  analysis?: AlertAnalysis;
   occurrence_count: number;
   created_at: string;
   updated_at: string;
@@ -143,6 +144,21 @@ export interface AlertStats {
   by_severity: Record<string, number>;
   linked_sessions: number;
   deduplicated_hit: number;
+}
+
+export interface AlertAnalysis {
+  status: "ready" | "failed" | "stale";
+  summary: string;
+  severity_assessment: string;
+  possible_causes: string[];
+  suggested_actions: string[];
+  recommended_tools: string[];
+  knowledge_queries: string[];
+  workflow: string;
+  confidence: string;
+  source: string;
+  generated_at: string;
+  error?: string;
 }
 
 export interface ToolParameter {
@@ -422,6 +438,13 @@ export async function updateAlertStatus(alertId: string, payload: { status: stri
 export async function linkAlertSession(alertId: string) {
   const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
     `/api/v1/alerts/${alertId}/session`
+  );
+  return response.data;
+}
+
+export async function analyzeAlert(alertId: string) {
+  const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
+    `/api/v1/alerts/${alertId}/analyze`
   );
   return response.data;
 }
