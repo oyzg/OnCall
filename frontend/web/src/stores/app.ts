@@ -8,6 +8,7 @@ const navigation: NavigationItem[] = [
   { key: "chat", label: "对话中心", path: "/chat" },
   { key: "alerts", label: "告警中心", path: "/alerts" },
   { key: "knowledge", label: "知识库", path: "/knowledge" },
+  { key: "tools", label: "工具中心", path: "/tools" },
   { key: "audit", label: "审计日志", path: "/audit" },
   { key: "settings", label: "系统配置", path: "/settings" },
 ];

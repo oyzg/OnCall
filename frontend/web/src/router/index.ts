@@ -8,6 +8,7 @@ import DashboardPage from "@/pages/DashboardPage.vue";
 import KnowledgePage from "@/pages/KnowledgePage.vue";
 import LoginPage from "@/pages/LoginPage.vue";
 import SettingsPage from "@/pages/SettingsPage.vue";
+import ToolsPage from "@/pages/ToolsPage.vue";
 import { useAuthStore } from "@/stores/auth";
 
 const router = createRouter({
@@ -61,6 +62,15 @@ const router = createRouter({
           meta: {
             title: "知识库",
             description: "管理文档、检索测试与知识生命周期",
+          },
+        },
+        {
+          path: "tools",
+          name: "tools",
+          component: ToolsPage,
+          meta: {
+            title: "工具中心",
+            description: "统一管理工具定义、调用入口与执行记录",
           },
         },
         {

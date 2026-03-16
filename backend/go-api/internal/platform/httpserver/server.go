@@ -14,6 +14,8 @@ import (
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/observability"
 	sessionAPI "github.com/oyzg/OnCall/backend/go-api/internal/session/api"
 	sessionApp "github.com/oyzg/OnCall/backend/go-api/internal/session/application"
+	toolAPI "github.com/oyzg/OnCall/backend/go-api/internal/tool/api"
+	toolApp "github.com/oyzg/OnCall/backend/go-api/internal/tool/application"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/logger"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/response"
@@ -44,6 +46,8 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	alertService := alertApp.NewService(sessionService)
 	alertService.EnsureSeeded()
 	alertHandler := alertAPI.NewHandler(alertService)
+	toolService := toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
+	toolHandler := toolAPI.NewHandler(toolService)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -105,4 +109,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	alertGroup.GET("/:alertID", alertHandler.GetDetail)
 	alertGroup.POST("/:alertID/status", alertHandler.UpdateStatus)
 	alertGroup.POST("/:alertID/session", alertHandler.LinkSession)
+
+	toolGroup := router.Group("/api/v1/tools")
+	toolGroup.Use(middleware.Auth(authService))
+	toolGroup.GET("", toolHandler.ListTools)
+	toolGroup.GET("/logs", toolHandler.ListLogs)
+	toolGroup.POST("/:toolName/call", toolHandler.CallTool)
 }

@@ -110,6 +110,38 @@ export interface AlertRecord {
   created_at: string;
 }
 
+export interface ToolParameter {
+  name: string;
+  type: "string" | "number";
+  description: string;
+  required: boolean;
+  default?: string | number;
+}
+
+export interface ToolDefinition {
+  name: string;
+  display_name: string;
+  description: string;
+  category: string;
+  allowed_roles: string[];
+  parameters: ToolParameter[];
+  available: boolean;
+  unavailable_reason?: string;
+}
+
+export interface ToolCallLog {
+  id: string;
+  tool_name: string;
+  operator: string;
+  user_id: string;
+  status: "success" | "failed" | "forbidden";
+  input: Record<string, unknown>;
+  output?: unknown;
+  error?: string;
+  duration_ms: number;
+  created_at: string;
+}
+
 export async function fetchGoHealth() {
   const response = await http.get("/healthz");
   return response.data;
@@ -332,5 +364,24 @@ export async function linkAlertSession(alertId: string) {
   const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
     `/api/v1/alerts/${alertId}/session`
   );
+  return response.data;
+}
+
+export async function fetchTools() {
+  const response = await http.get<ApiEnvelope<{ tools: ToolDefinition[] }>>("/api/v1/tools");
+  return response.data;
+}
+
+export async function callTool(toolName: string, parameters: Record<string, string | number>) {
+  const response = await http.post<ApiEnvelope<{ result: unknown }>>(`/api/v1/tools/${toolName}/call`, {
+    parameters,
+  });
+  return response.data;
+}
+
+export async function fetchToolLogs(params?: { tool_name?: string; limit?: number }) {
+  const response = await http.get<ApiEnvelope<{ logs: ToolCallLog[] }>>("/api/v1/tools/logs", {
+    params,
+  });
   return response.data;
 }

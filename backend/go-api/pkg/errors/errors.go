@@ -25,5 +25,6 @@ var (
 	ErrNotFound     = New("NOT_FOUND", "resource not found", http.StatusNotFound)
 	ErrBadRequest   = New("BAD_REQUEST", "bad request", http.StatusBadRequest)
 	ErrUnauthorized = New("UNAUTHORIZED", "authentication required", http.StatusUnauthorized)
+	ErrForbidden    = New("FORBIDDEN", "permission denied", http.StatusForbidden)
 	ErrBadMethod    = New("METHOD_NOT_ALLOWED", "method not allowed", http.StatusMethodNotAllowed)
 )
