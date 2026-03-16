@@ -5,3 +5,9 @@ export const http = axios.create({
   timeout: 10000,
 });
 
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    return Promise.reject(error);
+  }
+);

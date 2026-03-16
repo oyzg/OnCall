@@ -32,4 +32,23 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 		report := observability.BuildHealthReport(cfg)
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), report)
 	})
+
+	router.GET("/proxy/python-ai/healthz", func(c *gin.Context) {
+		report := observability.BuildHealthReport(cfg)
+		for _, component := range report.Components {
+			if component.Name == "python_ai_grpc" {
+				response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]any{
+					"service": "python-ai",
+					"status":  component.Status,
+					"detail":  component.Error,
+				})
+				return
+			}
+		}
+
+		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]any{
+			"service": "python-ai",
+			"status":  "unknown",
+		})
+	})
 }
