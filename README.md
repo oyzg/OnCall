@@ -18,6 +18,28 @@ AI OnCall is a monorepo for an intelligent on-call platform with:
 - Tool center with execution logs
 - Audit and operations insights page
 
+## Architecture Snapshot
+
+```mermaid
+flowchart LR
+    Web["Vue 3 Web Console"] --> Go["Go API (Gin)"]
+    Go --> Py["Python AI (FastAPI)"]
+    Go --> Data["Current Local JSON Persistence"]
+    Go --> Search["Elasticsearch (target)"]
+    Go --> Vector["Milvus (target)"]
+```
+
+Project role split:
+
+- `frontend/web`: user console and workflow pages
+- `backend/go-api`: auth, sessions, knowledge, alerts, tools, audit, orchestration
+- `backend/python-ai`: AI analysis boundary and future LangChain/LangGraph workflows
+
+Current implementation tradeoff:
+
+- Business flows are complete enough for demo and interview explanation
+- Some persistence and AI abilities are still MVP-level and intentionally staged for later upgrades
+
 ## Local Development
 
 Start infrastructure only:
@@ -98,9 +120,23 @@ python3 -m compileall backend/python-ai/app
 
 ## Documents
 
+- [Requirements](/Users/ouyangzhenguang/project/OnCall/docs/requirements.md)
+- [Module Design](/Users/ouyangzhenguang/project/OnCall/docs/module-design.md)
+- [System Architecture](/Users/ouyangzhenguang/project/OnCall/docs/system-architecture.md)
 - [Development Plan](/Users/ouyangzhenguang/project/OnCall/docs/development-plan.md)
+- [Database Design](/Users/ouyangzhenguang/project/OnCall/docs/database-design.md)
+- [API Design](/Users/ouyangzhenguang/project/OnCall/docs/api-design.md)
+- [Architecture Diagrams](/Users/ouyangzhenguang/project/OnCall/docs/architecture-diagrams.md)
 - [Phase 12 Integration](/Users/ouyangzhenguang/project/OnCall/docs/phase-12-integration.md)
 - [Phase 13 Demo](/Users/ouyangzhenguang/project/OnCall/docs/phase-13-demo.md)
+- [Phase 14 Showcase](/Users/ouyangzhenguang/project/OnCall/docs/phase-14-showcase.md)
+
+## Why This Project Is Worth Showing
+
+- It is a full-stack system, not a single-page demo.
+- It has clear business and AI service boundaries, which makes the architecture easy to explain.
+- It covers the main on-call workflow: alert -> analysis -> linked session -> knowledge/tool support -> audit trail.
+- It has both engineering assets and showcase assets: integration tests, Docker demo stack, diagrams, API doc, and interview talking points.
 
 ## Notes
 
