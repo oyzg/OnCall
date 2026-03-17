@@ -1,0 +1,7 @@
+.git
+tmp
+docs
+deploy
+frontend
+node_modules
+.DS_Store

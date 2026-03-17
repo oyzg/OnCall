@@ -1,0 +1,14 @@
+{
+  "title": "payment-api downstream timeout burst",
+  "service": "payment-api",
+  "environment": "prod",
+  "severity": "P1",
+  "source": "prometheus",
+  "summary": "Timeout ratio increased to 12% in the last 5 minutes.",
+  "description": "Checkout requests are timing out on downstream settlement calls. Verify dependency health and connection saturation first.",
+  "labels": {
+    "metric": "timeout_ratio",
+    "team": "payments",
+    "region": "ap-southeast"
+  }
+}

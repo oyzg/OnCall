@@ -1,0 +1,7 @@
+User service error ratio increased runbook
+
+1. Check the latest deployment, feature flag, and config changes in the last 30 minutes.
+2. Query recent alerts for user-service and confirm whether dependency failures are increasing.
+3. Review application logs for 5xx spikes, timeout patterns, and upstream error propagation.
+4. Inspect database connection usage, cache latency, and third-party authentication provider health.
+5. If error ratio continues to rise, roll back the last release and notify the account service owner.

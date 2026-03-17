@@ -1,0 +1,9 @@
+.git
+.venv
+tmp
+__pycache__
+*.pyc
+docs
+deploy
+frontend
+.DS_Store
