@@ -10,8 +10,8 @@ Current implementation status:
 - Sessions/messages: MySQL source of truth
 - Knowledge metadata/chunks: MySQL source of truth
 - Alerts/handling records: MySQL source of truth
-- Tool call logs: local JSON persistence under `tmp/tools/call-logs.json`
-- Audit logs: local JSON persistence under `tmp/audit/logs.json`
+- Tool call logs: MySQL source of truth
+- Audit logs: MySQL source of truth
 - Raw knowledge files: local disk under `tmp/knowledge/documents`
 
 Current persistence architecture:
@@ -24,8 +24,6 @@ Current persistence architecture:
 
 Still pending:
 
-- Move tool call logs into MySQL
-- Move audit logs into MySQL
 - Move auth users and RBAC into MySQL
 - Replace local raw-file storage with MinIO or object storage
 

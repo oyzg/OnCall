@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -36,6 +37,7 @@ type Service struct {
 	sessions    *sessionApp.Service
 	knowledge   *knowledgeApp.Service
 	storagePath string
+	repo        Repository
 }
 
 func NewService(
@@ -101,6 +103,18 @@ func NewService(
 		Parameters:   []toolDomain.Parameter{},
 	}, service.executePlatformOverview)
 
+	return service
+}
+
+func NewServiceWithRepository(
+	alertService *alertApp.Service,
+	retrievalService *retrieval.Service,
+	sessionService *sessionApp.Service,
+	knowledgeService *knowledgeApp.Service,
+	repo Repository,
+) *Service {
+	service := NewService(alertService, retrievalService, sessionService, knowledgeService)
+	service.repo = repo
 	return service
 }
 
@@ -201,6 +215,13 @@ func (s *Service) CallTool(user authDomain.User, toolName string, params map[str
 }
 
 func (s *Service) ListLogs(toolName, status string, limit int) []toolDomain.CallLog {
+	if s.repo != nil {
+		items, err := s.repo.ListLogs(context.Background(), toolName, status, limit)
+		if err == nil {
+			return items
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -225,6 +246,11 @@ func (s *Service) ListLogs(toolName, status string, limit int) []toolDomain.Call
 }
 
 func (s *Service) appendLog(entry toolDomain.CallLog) {
+	if s.repo != nil {
+		_ = s.repo.AppendLog(context.Background(), entry)
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

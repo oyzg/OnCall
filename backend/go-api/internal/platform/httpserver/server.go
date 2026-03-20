@@ -15,6 +15,7 @@ import (
 	alertInfra "github.com/oyzg/OnCall/backend/go-api/internal/alert/infrastructure"
 	auditAPI "github.com/oyzg/OnCall/backend/go-api/internal/audit/api"
 	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
+	auditInfra "github.com/oyzg/OnCall/backend/go-api/internal/audit/infrastructure"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
 	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
@@ -28,6 +29,7 @@ import (
 	sessionInfra "github.com/oyzg/OnCall/backend/go-api/internal/session/infrastructure"
 	toolAPI "github.com/oyzg/OnCall/backend/go-api/internal/tool/api"
 	toolApp "github.com/oyzg/OnCall/backend/go-api/internal/tool/application"
+	toolInfra "github.com/oyzg/OnCall/backend/go-api/internal/tool/infrastructure"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/logger"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/response"
@@ -49,13 +51,12 @@ func New(cfg config.Config, log *logger.Logger) *gin.Engine {
 func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authService := authApp.NewService(cfg.Auth)
 	auditService := auditApp.NewService()
-	authHandler := authAPI.NewHandler(authService, auditService)
-	auditHandler := auditAPI.NewHandler(auditService)
 	aiClient := gateway.NewHTTPClient(cfg.AI)
 	sessionService := sessionApp.NewService()
 	knowledgeService := knowledgeApp.NewService()
 	alertAnalyzer := aiAnalyzer.NewService(eino.NewStubOrchestrator(aiClient))
 	alertService := alertApp.NewService(sessionService, alertAnalyzer)
+	var toolRepo toolApp.Repository
 	if cfg.MySQL.Enabled {
 		gdb, err := db.Open(db.Config{
 			Driver:      cfg.MySQL.Driver,
@@ -74,7 +75,11 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 		sessionService = sessionApp.NewServiceWithRepository(sessionInfra.NewMySQLRepository(gdb))
 		knowledgeService = knowledgeApp.NewServiceWithRepository(knowledgeInfra.NewMySQLRepository(gdb))
 		alertService = alertApp.NewServiceWithRepository(sessionService, alertAnalyzer, alertInfra.NewMySQLRepository(gdb))
+		auditService = auditApp.NewServiceWithRepository(auditInfra.NewMySQLRepository(gdb))
+		toolRepo = toolInfra.NewMySQLRepository(gdb)
 	}
+	authHandler := authAPI.NewHandler(authService, auditService)
+	auditHandler := auditAPI.NewHandler(auditService)
 	knowledgeService.SetIndexer(knowledgeIndexer{client: aiClient})
 	knowledgeHandler := knowledgeAPI.NewHandler(knowledgeService, auditService)
 	retrievalService := retrievalApp.NewService(knowledgeService)
@@ -83,7 +88,12 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, auditService)
 	alertService.EnsureSeeded()
 	alertHandler := alertAPI.NewHandler(alertService, auditService)
-	toolService := toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
+	var toolService *toolApp.Service
+	if toolRepo != nil {
+		toolService = toolApp.NewServiceWithRepository(alertService, retrievalService, sessionService, knowledgeService, toolRepo)
+	} else {
+		toolService = toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
+	}
 	toolHandler := toolAPI.NewHandler(toolService, auditService)
 
 	router.GET("/", func(c *gin.Context) {

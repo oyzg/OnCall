@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
@@ -463,5 +464,8 @@ func resolveStorePath() string {
 }
 
 func nextID(prefix string) string {
-	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	sequence := idSequence.Add(1)
+	return fmt.Sprintf("%s_%d_%d", prefix, time.Now().UnixNano(), sequence)
 }
+
+var idSequence atomic.Uint64

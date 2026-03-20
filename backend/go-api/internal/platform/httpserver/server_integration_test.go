@@ -140,6 +140,14 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	if !strings.Contains(alertsBody, alertID) {
 		t.Fatalf("expected persisted alert after restart, got %s", alertsBody)
 	}
+	toolLogsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/tools/logs", "", restartedToken, "", http.StatusOK)
+	if !strings.Contains(toolLogsBody, `"tool_name":"knowledge_search"`) {
+		t.Fatalf("expected persisted tool logs after restart, got %s", toolLogsBody)
+	}
+	restartedAuditLogsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/audit/logs?limit=20", "", restartedToken, "", http.StatusOK)
+	if !strings.Contains(restartedAuditLogsBody, `"category":"tool"`) {
+		t.Fatalf("expected persisted audit logs after restart, got %s", restartedAuditLogsBody)
+	}
 }
 
 func loginAndGetToken(t *testing.T, router *gin.Engine) string {

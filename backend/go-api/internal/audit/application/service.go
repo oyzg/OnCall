@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -38,6 +39,7 @@ type Service struct {
 	mu          sync.RWMutex
 	logs        []auditDomain.Log
 	storagePath string
+	repo        Repository
 }
 
 func NewService() *Service {
@@ -49,10 +51,14 @@ func NewService() *Service {
 	return service
 }
 
-func (s *Service) Record(input RecordInput) auditDomain.Log {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{
+		logs: make([]auditDomain.Log, 0, 128),
+		repo: repo,
+	}
+}
 
+func (s *Service) Record(input RecordInput) auditDomain.Log {
 	log := auditDomain.Log{
 		ID:         nextID("audit"),
 		Category:   fallback(input.Category, "system"),
@@ -71,6 +77,14 @@ func (s *Service) Record(input RecordInput) auditDomain.Log {
 		log.ActorRoles = append([]string(nil), input.Actor.Roles...)
 	}
 
+	if s.repo != nil {
+		_ = s.repo.AppendLog(context.Background(), log)
+		return log
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.logs = append([]auditDomain.Log{log}, s.logs...)
 	if len(s.logs) > 1000 {
 		s.logs = s.logs[:1000]
@@ -80,6 +94,13 @@ func (s *Service) Record(input RecordInput) auditDomain.Log {
 }
 
 func (s *Service) List(options ListOptions) []auditDomain.Log {
+	if s.repo != nil {
+		items, err := s.repo.ListLogs(context.Background(), options.Category, options.Action, options.Status, options.Actor, options.Limit)
+		if err == nil {
+			return items
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -114,6 +135,13 @@ func (s *Service) List(options ListOptions) []auditDomain.Log {
 }
 
 func (s *Service) BuildStats() auditDomain.Stats {
+	if s.repo != nil {
+		stats, err := s.repo.BuildStats(context.Background())
+		if err == nil {
+			return stats
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -144,6 +172,13 @@ func (s *Service) BuildStats() auditDomain.Stats {
 }
 
 func (s *Service) Categories() []string {
+	if s.repo != nil {
+		items, err := s.repo.Categories(context.Background())
+		if err == nil {
+			return items
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

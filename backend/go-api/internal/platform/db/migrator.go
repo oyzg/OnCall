@@ -23,5 +23,7 @@ func AutoMigrate(db *gorm.DB) error {
 		&models.KnowledgeChunk{},
 		&models.Alert{},
 		&models.AlertHandlingRecord{},
+		&models.ToolCallLog{},
+		&models.AuditLog{},
 	)
 }
