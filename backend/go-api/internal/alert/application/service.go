@@ -57,6 +57,7 @@ type Service struct {
 	analyzer    Analyzer
 	seedOnce    sync.Once
 	storagePath string
+	repo        Repository
 }
 
 type Analyzer interface {
@@ -78,6 +79,16 @@ func NewService(sessionSvc *sessionApp.Service, analyzer Analyzer) *Service {
 	}
 	service.load()
 	return service
+}
+
+func NewServiceWithRepository(sessionSvc *sessionApp.Service, analyzer Analyzer, repo Repository) *Service {
+	return &Service{
+		alerts:     make(map[string]alertDomain.Alert),
+		records:    make(map[string][]alertDomain.HandlingRecord),
+		sessionSvc: sessionSvc,
+		analyzer:   analyzer,
+		repo:       repo,
+	}
 }
 
 func (s *Service) EnsureSeeded() {
@@ -122,6 +133,13 @@ func (s *Service) EnsureSeeded() {
 }
 
 func (s *Service) Ingest(input IngestInput) alertDomain.Alert {
+	if s.repo != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		alert := s.ingestRepositoryLocked(input)
+		return alert
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -131,6 +149,13 @@ func (s *Service) Ingest(input IngestInput) alertDomain.Alert {
 }
 
 func (s *Service) ListAlerts(status, severity, service, query string) []alertDomain.Alert {
+	if s.repo != nil {
+		items, err := s.repo.ListAlerts(context.Background(), status, severity, service, query)
+		if err == nil {
+			return items
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -165,12 +190,35 @@ func (s *Service) ListAlerts(status, severity, service, query string) []alertDom
 }
 
 func (s *Service) BuildStats() Stats {
+	if s.repo != nil {
+		items, err := s.repo.ListAlerts(context.Background(), "", "", "", "")
+		if err == nil {
+			return statsFromAlerts(items)
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.statsLocked()
 }
 
 func (s *Service) GetDetail(alertID string) (Detail, bool) {
+	if s.repo != nil {
+		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
+		if err != nil || !ok {
+			return Detail{}, false
+		}
+		records, err := s.repo.ListRecords(context.Background(), alertID)
+		if err != nil {
+			return Detail{}, false
+		}
+		return Detail{
+			Alert:   alert,
+			Records: records,
+			Stats:   s.BuildStats(),
+		}, true
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -192,6 +240,29 @@ func (s *Service) GetDetail(alertID string) (Detail, bool) {
 }
 
 func (s *Service) UpdateStatus(user authDomain.User, alertID string, input UpdateStatusInput) (Detail, bool) {
+	if s.repo != nil {
+		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
+		if err != nil || !ok {
+			return Detail{}, false
+		}
+
+		now := time.Now()
+		alert.Status = normalizeStatus(input.Status)
+		alert.UpdatedAt = now
+		record := alertDomain.HandlingRecord{
+			ID:        nextID("record"),
+			AlertID:   alertID,
+			Action:    "status_change",
+			Operator:  displayOperator(user),
+			Comment:   buildStatusComment(alert.Status, input.Comment),
+			CreatedAt: now,
+		}
+		if err := s.repo.SaveAlertWithRecord(context.Background(), alert, record); err != nil {
+			return Detail{}, false
+		}
+		return s.GetDetail(alertID)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -218,6 +289,30 @@ func (s *Service) UpdateStatus(user authDomain.User, alertID string, input Updat
 }
 
 func (s *Service) LinkSession(user authDomain.User, alertID string) (Detail, bool) {
+	if s.repo != nil {
+		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
+		if err != nil || !ok {
+			return Detail{}, false
+		}
+		if alert.LinkedSessionID == "" {
+			session := s.sessionSvc.CreateSession(user, fmt.Sprintf("告警排障: %s", alert.Title))
+			alert.LinkedSessionID = session.ID
+			alert.UpdatedAt = time.Now()
+			record := alertDomain.HandlingRecord{
+				ID:        nextID("record"),
+				AlertID:   alertID,
+				Action:    "link_session",
+				Operator:  displayOperator(user),
+				Comment:   "已创建排障会话并关联到当前告警。",
+				CreatedAt: time.Now(),
+			}
+			if err := s.repo.SaveAlertWithRecord(context.Background(), alert, record); err != nil {
+				return Detail{}, false
+			}
+		}
+		return s.GetDetail(alertID)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -246,6 +341,37 @@ func (s *Service) LinkSession(user authDomain.User, alertID string) (Detail, boo
 }
 
 func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
+	if s.repo != nil {
+		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
+		if err != nil || !ok {
+			return Detail{}, false
+		}
+		analysis := alertDomain.AlertAnalysis{
+			Status:      "failed",
+			Summary:     "当前分析器未初始化，无法生成告警分析结果。",
+			Source:      "go-alert-service",
+			GeneratedAt: time.Now(),
+			Error:       "analyzer unavailable",
+		}
+		if s.analyzer != nil {
+			analysis = s.analyzer.AnalyzeAlert(context.Background(), user, alert)
+		}
+		alert.Analysis = &analysis
+		alert.UpdatedAt = time.Now()
+		record := alertDomain.HandlingRecord{
+			ID:        nextID("record"),
+			AlertID:   alertID,
+			Action:    "ai_analysis",
+			Operator:  displayOperator(user),
+			Comment:   buildAnalysisComment(analysis),
+			CreatedAt: time.Now(),
+		}
+		if err := s.repo.SaveAlertWithRecord(context.Background(), alert, record); err != nil {
+			return Detail{}, false
+		}
+		return s.GetDetail(alertID)
+	}
+
 	s.mu.Lock()
 	alert, ok := s.alerts[alertID]
 	if !ok {
@@ -290,6 +416,13 @@ func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
 }
 
 func (s *Service) mustIngest(input IngestInput) {
+	if s.repo != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.ingestRepositoryLocked(input)
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -361,6 +494,69 @@ func (s *Service) ingestLocked(input IngestInput) alertDomain.Alert {
 	return normalized
 }
 
+func (s *Service) ingestRepositoryLocked(input IngestInput) alertDomain.Alert {
+	now := time.Now()
+	triggeredAt := now
+	if input.TriggeredAt != nil {
+		triggeredAt = *input.TriggeredAt
+	}
+
+	normalized := alertDomain.Alert{
+		ID:              nextID("alert"),
+		Title:           normalizeTitle(input.Title),
+		Service:         normalizeFallback(input.Service, "unknown-service"),
+		Environment:     normalizeFallback(input.Environment, "prod"),
+		Severity:        normalizeSeverity(input.Severity),
+		Source:          normalizeFallback(input.Source, "external"),
+		Status:          "open",
+		Summary:         normalizeFallback(input.Summary, "未提供摘要"),
+		Description:     strings.TrimSpace(input.Description),
+		Labels:          cloneLabels(input.Labels),
+		OccurrenceCount: 1,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		TriggeredAt:     triggeredAt,
+		LastTriggeredAt: triggeredAt,
+	}
+
+	existing, ok, err := s.repo.FindDuplicateOpenAlert(context.Background(), normalized)
+	if err == nil && ok {
+		existing.Severity = maxSeverity(existing.Severity, normalized.Severity)
+		existing.Summary = normalized.Summary
+		existing.Description = normalized.Description
+		existing.Labels = mergeLabels(existing.Labels, normalized.Labels)
+		existing.Status = "open"
+		existing.UpdatedAt = now
+		existing.LastTriggeredAt = triggeredAt
+		existing.OccurrenceCount++
+		if existing.Analysis != nil {
+			existing.Analysis.Status = "stale"
+			existing.Analysis.Error = ""
+		}
+		record := alertDomain.HandlingRecord{
+			ID:        nextID("record"),
+			AlertID:   existing.ID,
+			Action:    "deduplicate_ingest",
+			Operator:  existing.Source,
+			Comment:   "重复告警已合并到现有事件。",
+			CreatedAt: now,
+		}
+		_ = s.repo.SaveAlertWithRecord(context.Background(), existing, record)
+		return existing
+	}
+
+	record := alertDomain.HandlingRecord{
+		ID:        nextID("record"),
+		AlertID:   normalized.ID,
+		Action:    "ingest",
+		Operator:  normalized.Source,
+		Comment:   "告警已接入平台。",
+		CreatedAt: now,
+	}
+	_ = s.repo.SaveAlertWithRecord(context.Background(), normalized, record)
+	return normalized
+}
+
 func (s *Service) detailLocked(alertID string) Detail {
 	alert := s.alerts[alertID]
 	records := append([]alertDomain.HandlingRecord(nil), s.records[alertID]...)
@@ -385,6 +581,36 @@ func (s *Service) statsLocked() Stats {
 	}
 
 	for _, alert := range s.alerts {
+		stats.Total++
+		stats.BySeverity[alert.Severity]++
+		if alert.LinkedSessionID != "" {
+			stats.LinkedSessions++
+		}
+		if alert.OccurrenceCount > 1 {
+			stats.DeduplicatedHit += alert.OccurrenceCount - 1
+		}
+		switch alert.Status {
+		case "resolved":
+			stats.Resolved++
+		case "investigating":
+			stats.Investigating++
+		default:
+			stats.Open++
+		}
+	}
+	return stats
+}
+
+func statsFromAlerts(items []alertDomain.Alert) Stats {
+	stats := Stats{
+		BySeverity: map[string]int{
+			"P0": 0,
+			"P1": 0,
+			"P2": 0,
+			"P3": 0,
+		},
+	}
+	for _, alert := range items {
 		stats.Total++
 		stats.BySeverity[alert.Severity]++
 		if alert.LinkedSessionID != "" {

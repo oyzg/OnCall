@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,13 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 			Name:     "go-api",
 			Env:      "test",
 			LogLevel: "ERROR",
+		},
+		MySQL: config.MySQLConfig{
+			Enabled:     true,
+			Driver:      "sqlite",
+			DSN:         filepath.Join(tempRoot, "integration.db"),
+			PingTimeout: time.Second,
+			AutoMigrate: true,
 		},
 		AI: config.AIConfig{
 			HTTPBaseURL: "http://127.0.0.1:65535",
@@ -92,6 +100,45 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	auditLogsBody := request(t, router, http.MethodGet, "/api/v1/audit/logs?limit=20", "", token, "", http.StatusOK)
 	if !strings.Contains(auditLogsBody, `"category":"auth"`) || !strings.Contains(auditLogsBody, `"category":"tool"`) {
 		t.Fatalf("expected audit logs to include auth and tool records, got %s", auditLogsBody)
+	}
+
+	restartedRouter := New(config.Config{
+		App: config.AppConfig{
+			Name:     "go-api",
+			Env:      "test",
+			LogLevel: "ERROR",
+		},
+		MySQL: config.MySQLConfig{
+			Enabled:     true,
+			Driver:      "sqlite",
+			DSN:         filepath.Join(tempRoot, "integration.db"),
+			PingTimeout: time.Second,
+			AutoMigrate: true,
+		},
+		AI: config.AIConfig{
+			HTTPBaseURL: "http://127.0.0.1:65535",
+			HTTPTimeout: 100 * time.Millisecond,
+			GRPCTarget:  "127.0.0.1:50051",
+			PingTimeout: time.Second,
+		},
+		Auth: config.AuthConfig{
+			JWTSecret:      "integration-secret",
+			TokenExpiresIn: 24 * time.Hour,
+		},
+	}, logger.New("ERROR"))
+
+	restartedToken := loginAndGetToken(t, restartedRouter)
+	sessionsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/sessions", "", restartedToken, "", http.StatusOK)
+	if !strings.Contains(sessionsBody, sessionID) {
+		t.Fatalf("expected persisted session after restart, got %s", sessionsBody)
+	}
+	documentsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/knowledge/documents", "", restartedToken, "", http.StatusOK)
+	if !strings.Contains(documentsBody, "User Service SOP") {
+		t.Fatalf("expected persisted knowledge document after restart, got %s", documentsBody)
+	}
+	alertsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/alerts", "", restartedToken, "", http.StatusOK)
+	if !strings.Contains(alertsBody, alertID) {
+		t.Fatalf("expected persisted alert after restart, got %s", alertsBody)
 	}
 }
 

@@ -1,6 +1,9 @@
 package httpserver
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/gin-gonic/gin"
 	aiAnalyzer "github.com/oyzg/OnCall/backend/go-api/internal/ai/analyzer"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/eino"
@@ -9,16 +12,20 @@ import (
 	retrievalAPI "github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval/api"
 	alertAPI "github.com/oyzg/OnCall/backend/go-api/internal/alert/api"
 	alertApp "github.com/oyzg/OnCall/backend/go-api/internal/alert/application"
+	alertInfra "github.com/oyzg/OnCall/backend/go-api/internal/alert/infrastructure"
 	auditAPI "github.com/oyzg/OnCall/backend/go-api/internal/audit/api"
 	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
 	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
 	knowledgeApp "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/application"
+	knowledgeInfra "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/infrastructure"
+	"github.com/oyzg/OnCall/backend/go-api/internal/platform/db"
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/middleware"
 	"github.com/oyzg/OnCall/backend/go-api/internal/platform/observability"
 	sessionAPI "github.com/oyzg/OnCall/backend/go-api/internal/session/api"
 	sessionApp "github.com/oyzg/OnCall/backend/go-api/internal/session/application"
+	sessionInfra "github.com/oyzg/OnCall/backend/go-api/internal/session/infrastructure"
 	toolAPI "github.com/oyzg/OnCall/backend/go-api/internal/tool/api"
 	toolApp "github.com/oyzg/OnCall/backend/go-api/internal/tool/application"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
@@ -44,16 +51,36 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	auditService := auditApp.NewService()
 	authHandler := authAPI.NewHandler(authService, auditService)
 	auditHandler := auditAPI.NewHandler(auditService)
+	aiClient := gateway.NewHTTPClient(cfg.AI)
+	sessionService := sessionApp.NewService()
 	knowledgeService := knowledgeApp.NewService()
+	alertAnalyzer := aiAnalyzer.NewService(eino.NewStubOrchestrator(aiClient))
+	alertService := alertApp.NewService(sessionService, alertAnalyzer)
+	if cfg.MySQL.Enabled {
+		gdb, err := db.Open(db.Config{
+			Driver:      cfg.MySQL.Driver,
+			DSN:         cfg.MySQL.DSN,
+			PingTimeout: cfg.MySQL.PingTimeout,
+		})
+		if err != nil {
+			panic(fmt.Errorf("open persistence db: %w", err))
+		}
+		if cfg.MySQL.AutoMigrate {
+			if err := db.AutoMigrate(gdb); err != nil {
+				panic(fmt.Errorf("auto migrate persistence db: %w", err))
+			}
+		}
+
+		sessionService = sessionApp.NewServiceWithRepository(sessionInfra.NewMySQLRepository(gdb))
+		knowledgeService = knowledgeApp.NewServiceWithRepository(knowledgeInfra.NewMySQLRepository(gdb))
+		alertService = alertApp.NewServiceWithRepository(sessionService, alertAnalyzer, alertInfra.NewMySQLRepository(gdb))
+	}
+	knowledgeService.SetIndexer(knowledgeIndexer{client: aiClient})
 	knowledgeHandler := knowledgeAPI.NewHandler(knowledgeService, auditService)
 	retrievalService := retrievalApp.NewService(knowledgeService)
+	retrievalService.SetRemoteRetriever(aiClient)
 	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
-	sessionService := sessionApp.NewService()
 	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, auditService)
-	aiClient := gateway.NewHTTPClient(cfg.AI)
-	orchestrator := eino.NewStubOrchestrator(aiClient)
-	alertAnalyzer := aiAnalyzer.NewService(orchestrator)
-	alertService := alertApp.NewService(sessionService, alertAnalyzer)
 	alertService.EnsureSeeded()
 	alertHandler := alertAPI.NewHandler(alertService, auditService)
 	toolService := toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
@@ -71,21 +98,16 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	})
 
 	router.GET("/proxy/python-ai/healthz", func(c *gin.Context) {
-		report := observability.BuildHealthReport(cfg)
-		for _, component := range report.Components {
-			if component.Name == "python_ai_grpc" {
-				response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]any{
-					"service": "python-ai",
-					"status":  component.Status,
-					"detail":  component.Error,
-				})
-				return
-			}
+		report, err := aiClient.Health(c.Request.Context())
+		if err == nil {
+			response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), report)
+			return
 		}
 
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]any{
 			"service": "python-ai",
-			"status":  "unknown",
+			"status":  "unavailable",
+			"detail":  err.Error(),
 		})
 	})
 
@@ -134,4 +156,52 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	auditGroup.Use(middleware.Auth(authService))
 	auditGroup.GET("/logs", auditHandler.ListLogs)
 	auditGroup.GET("/stats", auditHandler.Stats)
+}
+
+type knowledgeIndexer struct {
+	client *gateway.HTTPClient
+}
+
+func (k knowledgeIndexer) IndexDocument(ctx context.Context, request knowledgeApp.IndexRequest) (knowledgeApp.IndexResult, error) {
+	if k.client == nil {
+		return knowledgeApp.IndexResult{}, nil
+	}
+
+	chunks := make([]gateway.RAGIndexChunk, 0, len(request.Chunks))
+	for _, chunk := range request.Chunks {
+		chunks = append(chunks, gateway.RAGIndexChunk{
+			DocumentID:    chunk.DocumentID,
+			DocumentTitle: chunk.DocumentTitle,
+			Category:      chunk.Category,
+			Index:         chunk.Index,
+			Content:       chunk.Content,
+		})
+	}
+
+	result, err := k.client.IndexKnowledge(ctx, gateway.RAGIndexRequest{
+		UserID:        request.UserID,
+		DocumentID:    request.DocumentID,
+		DocumentTitle: request.DocumentTitle,
+		Category:      request.Category,
+		Chunks:        chunks,
+	})
+	if err != nil {
+		return knowledgeApp.IndexResult{}, err
+	}
+
+	return knowledgeApp.IndexResult{
+		Status:           result.Status,
+		EmbeddingBackend: result.EmbeddingBackend,
+		VectorBackend:    result.VectorBackend,
+		LexicalBackend:   result.LexicalBackend,
+	}, nil
+}
+
+func (k knowledgeIndexer) DeleteDocument(ctx context.Context, documentID string) error {
+	if k.client == nil {
+		return nil
+	}
+
+	_, err := k.client.DeleteKnowledge(ctx, gateway.RAGDeleteRequest{DocumentID: documentID})
+	return err
 }

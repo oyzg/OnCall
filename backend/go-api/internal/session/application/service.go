@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,6 +20,7 @@ type Service struct {
 	sessions  map[string]domain.Session
 	messages  map[string][]domain.Message
 	storePath string
+	repo      Repository
 }
 
 func NewService() *Service {
@@ -31,7 +33,28 @@ func NewService() *Service {
 	return service
 }
 
+func NewServiceWithRepository(repo Repository) *Service {
+	return &Service{repo: repo}
+}
+
 func (s *Service) CreateSession(user authDomain.User, title string) domain.Session {
+	if s.repo != nil {
+		now := time.Now()
+		session := domain.Session{
+			ID:                 nextID("sess"),
+			UserID:             user.ID,
+			Title:              normalizeTitle(title),
+			LastMessagePreview: "",
+			MessageCount:       0,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+			LastMessageAt:      now,
+		}
+		if err := s.repo.CreateSession(context.Background(), session); err == nil {
+			return session
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -54,6 +77,13 @@ func (s *Service) CreateSession(user authDomain.User, title string) domain.Sessi
 }
 
 func (s *Service) ListSessions(user authDomain.User, query string, limit int) []domain.Session {
+	if s.repo != nil {
+		items, err := s.repo.ListSessionsByUser(context.Background(), user.ID, query, limit)
+		if err == nil {
+			return items
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -81,6 +111,13 @@ func (s *Service) ListSessions(user authDomain.User, query string, limit int) []
 }
 
 func (s *Service) DeleteSession(user authDomain.User, sessionID string) bool {
+	if s.repo != nil {
+		ok, err := s.repo.DeleteSession(context.Background(), user.ID, sessionID)
+		if err == nil {
+			return ok
+		}
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -103,6 +140,13 @@ type MessagePage struct {
 }
 
 func (s *Service) ListMessages(user authDomain.User, sessionID string, limit int, beforeID string) (MessagePage, bool) {
+	if s.repo != nil {
+		page, err := s.repo.ListMessages(context.Background(), user.ID, sessionID, limit, beforeID)
+		if err == nil {
+			return page, true
+		}
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -145,6 +189,62 @@ func (s *Service) ListMessages(user authDomain.User, sessionID string, limit int
 }
 
 func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content string) (domain.Message, bool) {
+	if s.repo != nil {
+		sessions, err := s.repo.ListSessionsByUser(context.Background(), user.ID, "", 0)
+		if err != nil {
+			return domain.Message{}, false
+		}
+		var session domain.Session
+		found := false
+		for _, item := range sessions {
+			if item.ID == sessionID {
+				session = item
+				found = true
+				break
+			}
+		}
+		if !found {
+			return domain.Message{}, false
+		}
+
+		page, err := s.repo.ListMessages(context.Background(), user.ID, sessionID, 0, "")
+		if err != nil {
+			return domain.Message{}, false
+		}
+		now := time.Now()
+		userMessage := domain.Message{
+			ID:        nextID("msg"),
+			SessionID: sessionID,
+			Role:      "user",
+			Content:   strings.TrimSpace(content),
+			Status:    "completed",
+			CreatedAt: now,
+		}
+		assistantMessage := domain.Message{
+			ID:         nextID("msg"),
+			SessionID:  sessionID,
+			Role:       "assistant",
+			Content:    "",
+			Status:     "streaming",
+			References: nil,
+			CreatedAt:  now.Add(time.Millisecond),
+		}
+		messages := append(page.Messages, userMessage, assistantMessage)
+		if session.Title == defaultSessionTitle {
+			session.Title = titleFromMessage(content)
+		}
+		session.UpdatedAt = now
+		session.LastMessageAt = now
+		session.MessageCount = len(messages)
+		if preview := latestPreview(messages); preview != "" {
+			session.LastMessagePreview = preview
+		}
+		if err := s.repo.UpsertSessionWithMessages(context.Background(), session, messages); err != nil {
+			return domain.Message{}, false
+		}
+		return assistantMessage, true
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -185,6 +285,48 @@ func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content s
 }
 
 func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messageID, content string, references []domain.Reference) bool {
+	if s.repo != nil {
+		sessions, err := s.repo.ListSessionsByUser(context.Background(), user.ID, "", 0)
+		if err != nil {
+			return false
+		}
+		var session domain.Session
+		found := false
+		for _, item := range sessions {
+			if item.ID == sessionID {
+				session = item
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+
+		page, err := s.repo.ListMessages(context.Background(), user.ID, sessionID, 0, "")
+		if err != nil {
+			return false
+		}
+		for index := range page.Messages {
+			if page.Messages[index].ID != messageID {
+				continue
+			}
+			page.Messages[index].Content = content
+			page.Messages[index].Status = "completed"
+			page.Messages[index].References = references
+			break
+		}
+
+		now := time.Now()
+		session.UpdatedAt = now
+		session.LastMessageAt = now
+		session.MessageCount = len(page.Messages)
+		if preview := latestPreview(page.Messages); preview != "" {
+			session.LastMessagePreview = preview
+		}
+		return s.repo.UpsertSessionWithMessages(context.Background(), session, page.Messages) == nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

@@ -7,19 +7,27 @@ This document defines the target transactional data model for AI OnCall and clar
 Current implementation status:
 
 - Auth: in-memory demo accounts
-- Sessions/messages: local JSON persistence under `tmp/dev/session-store.json`
-- Knowledge metadata: local JSON persistence under `tmp/knowledge/metadata.json`
-- Alerts: local JSON persistence under `tmp/alerts/alerts.json`
+- Sessions/messages: MySQL source of truth
+- Knowledge metadata/chunks: MySQL source of truth
+- Alerts/handling records: MySQL source of truth
 - Tool call logs: local JSON persistence under `tmp/tools/call-logs.json`
 - Audit logs: local JSON persistence under `tmp/audit/logs.json`
+- Raw knowledge files: local disk under `tmp/knowledge/documents`
 
-Target persistence architecture:
+Current persistence architecture:
 
-- MySQL: transactional data and audit records
+- MySQL: transactional session, knowledge, and alert data
 - Redis: hot session cache, rate limiting, short-lived state
 - Elasticsearch: keyword retrieval index
 - Milvus: vector retrieval index
 - MinIO or object storage: raw document files
+
+Still pending:
+
+- Move tool call logs into MySQL
+- Move audit logs into MySQL
+- Move auth users and RBAC into MySQL
+- Replace local raw-file storage with MinIO or object storage
 
 ## 2. Design Principles
 

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,8 +31,11 @@ type HTTPConfig struct {
 }
 
 type MySQLConfig struct {
+	Enabled     bool
+	Driver      string
 	DSN         string
 	PingTimeout time.Duration
+	AutoMigrate bool
 }
 
 type RedisConfig struct {
@@ -66,8 +70,11 @@ func Load() Config {
 			IdleTimeout:  getDuration("HTTP_IDLE_TIMEOUT_SECONDS", 30*time.Second),
 		},
 		MySQL: MySQLConfig{
+			Enabled:     getBool("MYSQL_ENABLED", true),
+			Driver:      getEnv("MYSQL_DRIVER", "mysql"),
 			DSN:         getEnv("MYSQL_DSN", "oncall:oncall@tcp(127.0.0.1:3306)/oncall?charset=utf8mb4&parseTime=True&loc=Local"),
 			PingTimeout: getDuration("MYSQL_PING_TIMEOUT_SECONDS", 2*time.Second),
+			AutoMigrate: getBool("MYSQL_AUTO_MIGRATE", true),
 		},
 		Redis: RedisConfig{
 			Addr:        getEnv("REDIS_ADDR", "127.0.0.1:6379"),
@@ -109,4 +116,16 @@ func getDuration(key string, fallback time.Duration) time.Duration {
 	}
 
 	return time.Duration(seconds) * time.Second
+}
+
+func getBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
