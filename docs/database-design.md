@@ -6,7 +6,7 @@ This document defines the target transactional data model for AI OnCall and clar
 
 Current implementation status:
 
-- Auth: in-memory demo accounts
+- Auth/users/roles: MySQL source of truth
 - Sessions/messages: MySQL source of truth
 - Knowledge metadata/chunks: MySQL source of truth
 - Alerts/handling records: MySQL source of truth
@@ -24,7 +24,6 @@ Current persistence architecture:
 
 Still pending:
 
-- Move auth users and RBAC into MySQL
 - Replace local raw-file storage with MinIO or object storage
 
 ## 2. Design Principles
@@ -514,13 +513,13 @@ Recommended order:
 3. `alerts`, `alert_records`, and `alert_analysis`
 4. `tool_call_logs`
 5. `audit_logs`
-6. `users` and `user_roles`
+6. `users` and `user_roles` (completed)
 
 Reason:
 
 - Session and knowledge data are closest to the core interaction loop.
 - Alert, tool, and audit data already have stable domain shape.
-- Auth can be migrated after the demo accounts are replaced by real user management.
+- Auth is now persisted in MySQL, but still uses seeded demo users rather than a full user-management flow.
 
 ## 7. Known Gaps
 
@@ -529,3 +528,4 @@ Reason:
 - Some list pages still assume full in-memory list rather than database pagination.
 - `summary` for sessions is planned but not generated yet.
 - `knowledge_chunks` currently come from text chunking only, not a full parser pipeline.
+- Raw knowledge files still live on local disk instead of MinIO/object storage.

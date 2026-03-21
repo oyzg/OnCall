@@ -16,6 +16,8 @@ func NewMigrator(path string) Migrator {
 
 func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
+		&models.User{},
+		&models.UserRole{},
 		&models.Session{},
 		&models.Message{},
 		&models.MessageReference{},

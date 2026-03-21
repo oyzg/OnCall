@@ -18,6 +18,7 @@ import (
 	auditInfra "github.com/oyzg/OnCall/backend/go-api/internal/audit/infrastructure"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authApp "github.com/oyzg/OnCall/backend/go-api/internal/auth/application"
+	authInfra "github.com/oyzg/OnCall/backend/go-api/internal/auth/infrastructure"
 	knowledgeAPI "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/api"
 	knowledgeApp "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/application"
 	knowledgeInfra "github.com/oyzg/OnCall/backend/go-api/internal/knowledge/infrastructure"
@@ -72,6 +73,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 			}
 		}
 
+		authService = authApp.NewServiceWithRepository(cfg.Auth, authInfra.NewMySQLRepository(gdb))
+		if err := authService.EnsureSeeded(); err != nil {
+			panic(fmt.Errorf("seed auth users: %w", err))
+		}
 		sessionService = sessionApp.NewServiceWithRepository(sessionInfra.NewMySQLRepository(gdb))
 		knowledgeService = knowledgeApp.NewServiceWithRepository(knowledgeInfra.NewMySQLRepository(gdb))
 		alertService = alertApp.NewServiceWithRepository(sessionService, alertAnalyzer, alertInfra.NewMySQLRepository(gdb))
