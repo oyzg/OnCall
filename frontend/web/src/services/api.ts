@@ -82,9 +82,28 @@ export interface KnowledgeDocument {
   chunk_previews: string[];
   failure_reason?: string;
   chunk_count: number;
+  index_status?: string;
+  embedding_backend?: string;
+  vector_backend?: string;
+  lexical_backend?: string;
+  index_error?: string;
   created_at: string;
   updated_at: string;
   processed_at?: string;
+  indexed_at?: string;
+}
+
+export interface HealthComponent {
+  name: string;
+  status: string;
+  detail?: string;
+}
+
+export interface PythonHealthReport {
+  service: string;
+  env: string;
+  status: string;
+  components: HealthComponent[];
 }
 
 export interface RetrievalReference {
@@ -94,17 +113,30 @@ export interface RetrievalReference {
   chunk_index?: number;
   chunk: string;
   score: number;
+  lexical_score?: number;
+  semantic_score?: number;
+  boost_score?: number;
+  match_reasons?: string[];
 }
 
 export interface RetrievalReport {
   query: string;
+  rewritten_query: string;
+  query_terms: string[];
+  expanded_terms: string[];
   answer: string;
   references: RetrievalReference[];
   scanned_docs: number;
   scanned_chunks: number;
   matched_chunks: number;
+  lexical_candidates: number;
+  semantic_candidates: number;
+  reranked_chunks: number;
   strategy: string;
   requested_limit: number;
+  embedding_backend?: string;
+  vector_backend?: string;
+  lexical_backend?: string;
 }
 
 export interface AlertItem {

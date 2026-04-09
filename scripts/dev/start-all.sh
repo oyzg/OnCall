@@ -35,14 +35,24 @@ EOF
 }
 
 check_python_deps() {
-  if ! python3 -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+  if [[ ! -x "$ROOT_DIR/backend/python-ai/.venv/bin/python" ]]; then
+    cat >&2 <<'EOF'
+Python AI virtualenv is not installed.
+Run:
+  cd backend/python-ai
+  python3 -m venv .venv
+  .venv/bin/python -m pip install -e .
+EOF
+    exit 1
+  fi
+
+  if ! "$ROOT_DIR/backend/python-ai/.venv/bin/python" -c "import fastapi, uvicorn, pymilvus, sentence_transformers" >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 Python AI dependencies are not installed.
 Run:
   cd backend/python-ai
   python3 -m venv .venv
-  source .venv/bin/activate
-  pip install -e .
+  .venv/bin/python -m pip install -e .
 EOF
     exit 1
   fi
@@ -71,7 +81,7 @@ start_python_ai() {
   echo "[3/4] Starting Python AI service..."
   (
     cd "$ROOT_DIR/backend/python-ai"
-    python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+    .venv/bin/python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
   ) >"$PYTHON_LOG" 2>&1 &
   PYTHON_PID=$!
 }

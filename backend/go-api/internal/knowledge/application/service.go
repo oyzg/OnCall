@@ -394,6 +394,7 @@ func (s *Service) processDocument(documentID string) {
 			document.VectorBackend = result.VectorBackend
 			document.LexicalBackend = result.LexicalBackend
 			document.IndexError = ""
+			document.Summary = textPreview(describeIndexOutcome(result)+" "+summary, 96)
 			document.IndexedAt = &now
 			document.UpdatedAt = now
 		})
@@ -658,11 +659,53 @@ func nextDocumentID() string {
 	return fmt.Sprintf("doc_%d", time.Now().UnixNano())
 }
 
+func describeIndexOutcome(result IndexResult) string {
+	if result.Status == "" {
+		return "文档已完成基础入库。"
+	}
+
+	fullHybrid := result.VectorBackend == "milvus" &&
+		result.LexicalBackend == "elasticsearch" &&
+		result.EmbeddingBackend != "" &&
+		result.EmbeddingBackend != "hash_fallback"
+	if fullHybrid {
+		return "文档已完成混合索引，可同时使用 Embedding、Milvus 和 Elasticsearch 检索。"
+	}
+
+	parts := make([]string, 0, 3)
+	if result.EmbeddingBackend == "hash_fallback" {
+		parts = append(parts, "Embedding 使用本地兜底")
+	}
+	if result.VectorBackend == "milvus" {
+		parts = append(parts, "Milvus 向量索引已建立")
+	} else if result.VectorBackend != "" {
+		parts = append(parts, "向量检索回退本地兜底")
+	}
+	if result.LexicalBackend == "elasticsearch" {
+		parts = append(parts, "Elasticsearch 词法索引已建立")
+	} else if result.LexicalBackend != "" {
+		parts = append(parts, "关键词检索回退本地兜底")
+	}
+
+	if len(parts) == 0 {
+		return "文档已完成基础入库，当前使用本地兜底检索。"
+	}
+	return "文档索引已建立，但存在部分降级：" + strings.Join(parts, "；") + "。"
+}
+
 func (s *Service) indexReadyDocument(userID, documentID string) (IndexResult, error) {
 	s.mu.RLock()
 	document, ok := s.documents[documentID]
 	indexer := s.indexer
 	s.mu.RUnlock()
+	if s.repo != nil {
+		loaded, exists, err := s.repo.GetDocumentByID(context.Background(), documentID)
+		if err != nil {
+			return IndexResult{}, err
+		}
+		document = loaded
+		ok = exists
+	}
 	if !ok || indexer == nil {
 		return IndexResult{}, nil
 	}

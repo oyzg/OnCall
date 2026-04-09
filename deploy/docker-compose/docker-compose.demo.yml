@@ -139,6 +139,7 @@ services:
       GRPC_AI_TARGET: python-ai:50051
       AI_HTTP_BASE_URL: http://python-ai:8000
       AI_HTTP_TIMEOUT_SECONDS: 8
+      AI_INDEX_TIMEOUT_SECONDS: 25
       AI_GRPC_PING_TIMEOUT_SECONDS: 2
       MYSQL_DSN: oncall:oncall@tcp(mysql:3306)/oncall?charset=utf8mb4&parseTime=True&loc=Local
       MYSQL_PING_TIMEOUT_SECONDS: 2

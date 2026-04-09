@@ -62,6 +62,23 @@ Start services separately when needed:
 ./scripts/dev/python-ai.sh
 ```
 
+OpenAI embedding configuration for real RAG:
+
+```bash
+cd backend/python-ai
+cp .env.example .env
+```
+
+Then set at least:
+
+```env
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your_openai_api_key
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_API_MODEL=text-embedding-3-small
+EMBEDDING_DIMENSION=1536
+```
+
 ## Demo Deployment
 
 Start the demo stack with Docker Compose:

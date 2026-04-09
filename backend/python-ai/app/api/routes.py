@@ -5,13 +5,16 @@ from app.api.deps import (
     get_app_settings,
     get_chain_registry,
     get_graph_registry,
+    get_rag_service,
 )
 from app.chains.base import ChainRegistry
 from app.core.config import AppSettings
 from app.graphs.base import GraphRegistry
 from app.schemas.analysis import AlertAnalysisRequest
+from app.schemas.rag import RAGDeleteRequest, RAGIndexRequest, RAGRetrieveRequest
 from app.schemas.response import success
 from app.services.alert_analysis import AlertAnalysisService
+from app.services.hybrid_rag import HybridRAGService
 from app.services.health import build_health_report
 
 router = APIRouter()
@@ -45,3 +48,27 @@ def analyze_alert(
     service: AlertAnalysisService = Depends(get_alert_analysis_service),
 ) -> dict:
     return success(service.analyze_alert(payload).model_dump())
+
+
+@router.post("/api/v1/rag/index")
+def index_rag_document(
+    payload: RAGIndexRequest,
+    service: HybridRAGService = Depends(get_rag_service),
+) -> dict:
+    return success(service.index_document(payload).model_dump())
+
+
+@router.post("/api/v1/rag/delete")
+def delete_rag_document(
+    payload: RAGDeleteRequest,
+    service: HybridRAGService = Depends(get_rag_service),
+) -> dict:
+    return success(service.delete_document(payload).model_dump())
+
+
+@router.post("/api/v1/rag/retrieve")
+def retrieve_rag(
+    payload: RAGRetrieveRequest,
+    service: HybridRAGService = Depends(get_rag_service),
+) -> dict:
+    return success(service.retrieve(payload).model_dump())

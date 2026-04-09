@@ -10,6 +10,8 @@ dependencies = [
   "langgraph>=0.3.20",
   "pydantic>=2.10.6",
   "pydantic-settings>=2.7.1",
+  "pymilvus>=2.5.5",
+  "sentence-transformers>=3.4.1",
   "uvicorn>=0.34.0"
 ]
 
