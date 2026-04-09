@@ -1,11 +1,11 @@
-version: v1
+version: v2
+clean: true
 plugins:
-  - plugin: buf.build/protocolbuffers/go
+  - remote: buf.build/protocolbuffers/go:v1.36.11
     out: ../backend/go-api/gen/proto
     opt:
       - paths=source_relative
-  - plugin: buf.build/grpc/go
+  - remote: buf.build/grpc/go:v1.6.1
     out: ../backend/go-api/gen/proto
     opt:
       - paths=source_relative
-

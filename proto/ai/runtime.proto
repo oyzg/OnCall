@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package oncall.ai.v1;
+
+option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai;aipb";
+
+import "common/metadata.proto";
+
+message TraceEvent {
+  string stage = 1;
+  string message = 2;
+  string severity = 3;
+  string timestamp = 4;
+  repeated string tags = 5;
+}
+
+message Citation {
+  string source = 1;
+  string title = 2;
+  string url = 3;
+  string snippet = 4;
+  string document_id = 5;
+  float score = 6;
+}
+
+message ToolCall {
+  string name = 1;
+  string arguments_json = 2;
+  string outcome = 3;
+  string summary = 4;
+}
+
+message ConversationMessage {
+  string role = 1;
+  string content = 2;
+  string author_id = 3;
+  string created_at = 4;
+  repeated Citation citations = 5;
+}
+
+message LinkedAlert {
+  string alert_id = 1;
+  string title = 2;
+  string service = 3;
+  string environment = 4;
+  string severity = 5;
+  string source = 6;
+  string summary = 7;
+  string description = 8;
+  repeated string labels = 9;
+  string triggered_at = 10;
+  string linked_session_id = 11;
+}
+
+message AnalyzeAlertRequest {
+  oncall.common.v1.RequestMetadata metadata = 1;
+  string alert_id = 2;
+  string title = 3;
+  string service = 4;
+  string environment = 5;
+  string severity = 6;
+  string source = 7;
+  string summary = 8;
+  string description = 9;
+  repeated string labels = 10;
+  string triggered_at = 11;
+  string linked_session_id = 12;
+  string user_id = 13;
+  repeated string user_roles = 14;
+}
+
+message AnalyzeAlertResponse {
+  string status = 1;
+  string summary = 2;
+  string severity_assessment = 3;
+  repeated string possible_causes = 4;
+  repeated string suggested_actions = 5;
+  repeated string recommended_tools = 6;
+  repeated string knowledge_queries = 7;
+  string workflow = 8;
+  float confidence = 9;
+  string source = 10;
+  string generated_at = 11;
+  string error = 12;
+  repeated TraceEvent trace = 13;
+}
+
+message RunConversationTurnRequest {
+  oncall.common.v1.RequestMetadata metadata = 1;
+  string session_id = 2;
+  string user_id = 3;
+  repeated string user_roles = 4;
+  string message = 5;
+  repeated ConversationMessage history = 6;
+  LinkedAlert linked_alert = 7;
+  repeated string allowed_tools = 8;
+  int32 retrieval_limit = 9;
+}
+
+message RunConversationTurnResponse {
+  string answer = 1;
+  repeated Citation citations = 2;
+  repeated ToolCall tool_calls = 3;
+  string route = 4;
+  string status = 5;
+  string error = 6;
+  repeated TraceEvent trace = 7;
+}
+
+message HealthRequest {
+  oncall.common.v1.RequestMetadata metadata = 1;
+}
+
+message HealthResponse {
+  string status = 1;
+  string version = 2;
+  string service = 3;
+  string error = 4;
+  repeated TraceEvent trace = 5;
+}
+
+service RuntimeService {
+  rpc AnalyzeAlert(AnalyzeAlertRequest) returns (AnalyzeAlertResponse);
+  rpc RunConversationTurn(RunConversationTurnRequest) returns (RunConversationTurnResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}

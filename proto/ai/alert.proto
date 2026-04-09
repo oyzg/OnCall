@@ -6,6 +6,7 @@ option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai;aipb";
 
 import "common/metadata.proto";
 
+// Deprecated: replaced by proto/ai/runtime.proto and RuntimeService.
 message AlertAnalysisRequest {
   oncall.common.v1.RequestMetadata metadata = 1;
   string alert_id = 2;
@@ -19,7 +20,7 @@ message AlertAnalysisResponse {
   repeated string suggested_actions = 3;
 }
 
+// Deprecated: replaced by proto/ai/runtime.proto and RuntimeService.
 service AlertAnalysisService {
   rpc Analyze(AlertAnalysisRequest) returns (AlertAnalysisResponse);
 }
-
