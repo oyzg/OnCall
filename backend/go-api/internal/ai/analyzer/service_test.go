@@ -1,0 +1,110 @@
+package analyzer
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/eino"
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/gateway"
+	alertDomain "github.com/oyzg/OnCall/backend/go-api/internal/alert/domain"
+	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+)
+
+type failingOrchestrator struct{}
+
+func (failingOrchestrator) HandleChat(context.Context, gateway.ChatRequest) (gateway.ChatResponse, error) {
+	return gateway.ChatResponse{}, nil
+}
+
+func (failingOrchestrator) HandleAlertAnalysis(context.Context, gateway.AlertAnalysisRequest) (gateway.AlertAnalysisResponse, error) {
+	return gateway.AlertAnalysisResponse{}, status.Error(codes.Unavailable, "python ai runtime unavailable")
+}
+
+var _ eino.Orchestrator = failingOrchestrator{}
+
+type captureOrchestrator struct {
+	request gateway.AlertAnalysisRequest
+}
+
+func (c *captureOrchestrator) HandleChat(context.Context, gateway.ChatRequest) (gateway.ChatResponse, error) {
+	return gateway.ChatResponse{}, nil
+}
+
+func (c *captureOrchestrator) HandleAlertAnalysis(_ context.Context, request gateway.AlertAnalysisRequest) (gateway.AlertAnalysisResponse, error) {
+	c.request = request
+	return gateway.AlertAnalysisResponse{
+		Status:             "ready",
+		Summary:            "captured summary",
+		SeverityAssessment: "captured severity",
+		Confidence:         "high",
+		GeneratedAt:        "2026-04-09T10:00:00Z",
+	}, nil
+}
+
+func TestAnalyzeAlertFallsBackWhenRuntimeUnavailable(t *testing.T) {
+	service := NewService(failingOrchestrator{})
+	alert := alertDomain.Alert{
+		ID:              "alert-1",
+		Title:           "Payment API timeout",
+		Service:         "payment-api",
+		Environment:     "prod",
+		Severity:        "P1",
+		Source:          "prometheus",
+		Summary:         "p95 latency increased",
+		Description:     "timeouts are increasing on checkout",
+		LinkedSessionID: "session-1",
+		LastTriggeredAt: time.Date(2026, 4, 9, 10, 0, 0, 0, time.UTC),
+	}
+
+	analysis := service.AnalyzeAlert(context.Background(), authDomain.User{}, alert)
+
+	if analysis.Status != "failed" {
+		t.Fatalf("expected failed fallback, got %s", analysis.Status)
+	}
+	if !strings.Contains(analysis.Error, "runtime unavailable") {
+		t.Fatalf("expected unavailable error, got %s", analysis.Error)
+	}
+	if analysis.Workflow != "go_fallback_rule_analysis" {
+		t.Fatalf("expected fallback workflow, got %s", analysis.Workflow)
+	}
+}
+
+func TestAnalyzeAlertPassesUserContextToGateway(t *testing.T) {
+	orchestrator := &captureOrchestrator{}
+	service := NewService(orchestrator)
+	alert := alertDomain.Alert{
+		ID:              "alert-1",
+		Title:           "Payment API timeout",
+		Service:         "payment-api",
+		Environment:     "prod",
+		Severity:        "P1",
+		Source:          "prometheus",
+		Summary:         "p95 latency increased",
+		Description:     "timeouts are increasing on checkout",
+		LinkedSessionID: "session-1",
+		LastTriggeredAt: time.Date(2026, 4, 9, 10, 0, 0, 0, time.UTC),
+	}
+
+	analysis := service.AnalyzeAlert(context.Background(), authDomain.User{
+		ID:    "user-123",
+		Roles: []string{"oncall", "admin"},
+	}, alert)
+
+	if analysis.Status != "ready" {
+		t.Fatalf("unexpected analysis status: %s", analysis.Status)
+	}
+	if orchestrator.request.UserID != "user-123" {
+		t.Fatalf("expected user id to be forwarded, got %s", orchestrator.request.UserID)
+	}
+	if !reflect.DeepEqual(orchestrator.request.UserRoles, []string{"oncall", "admin"}) {
+		t.Fatalf("expected roles to be forwarded, got %#v", orchestrator.request.UserRoles)
+	}
+	if orchestrator.request.AlertID != "alert-1" {
+		t.Fatalf("expected alert id to be forwarded, got %s", orchestrator.request.AlertID)
+	}
+}

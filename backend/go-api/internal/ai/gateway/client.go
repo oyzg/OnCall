@@ -7,20 +7,81 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
+	aipb "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai"
+	commonpb "github.com/oyzg/OnCall/backend/go-api/gen/proto/common"
+	"github.com/oyzg/OnCall/backend/go-api/internal/platform/grpcclient"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
 )
 
 type ChatRequest struct {
-	Query          string `json:"query"`
-	ConversationID string `json:"conversation_id"`
+	Query          string        `json:"query"`
+	ConversationID string        `json:"conversation_id"`
+	UserID         string        `json:"user_id,omitempty"`
+	UserRoles      []string      `json:"user_roles,omitempty"`
+	History        []ChatMessage `json:"history,omitempty"`
+	LinkedAlert    *LinkedAlert  `json:"linked_alert,omitempty"`
+	AllowedTools   []string      `json:"allowed_tools,omitempty"`
+	RetrievalLimit int           `json:"retrieval_limit,omitempty"`
 }
 
 type ChatResponse struct {
-	Answer    string   `json:"answer"`
-	Citations []string `json:"citations"`
+	Answer    string       `json:"answer"`
+	Citations []string     `json:"citations"`
+	Route     string       `json:"route,omitempty"`
+	Status    string       `json:"status,omitempty"`
+	Error     string       `json:"error,omitempty"`
+	ToolCalls []ToolCall   `json:"tool_calls,omitempty"`
+	Trace     []TraceEvent `json:"trace,omitempty"`
+}
+
+type ChatMessage struct {
+	Role      string         `json:"role"`
+	Content   string         `json:"content"`
+	AuthorID  string         `json:"author_id,omitempty"`
+	CreatedAt string         `json:"created_at,omitempty"`
+	Citations []ChatCitation `json:"citations,omitempty"`
+}
+
+type ChatCitation struct {
+	Source     string  `json:"source,omitempty"`
+	Title      string  `json:"title,omitempty"`
+	URL        string  `json:"url,omitempty"`
+	Snippet    string  `json:"snippet,omitempty"`
+	DocumentID string  `json:"document_id,omitempty"`
+	Score      float64 `json:"score,omitempty"`
+}
+
+type LinkedAlert struct {
+	AlertID         string            `json:"alert_id,omitempty"`
+	Title           string            `json:"title,omitempty"`
+	Service         string            `json:"service,omitempty"`
+	Environment     string            `json:"environment,omitempty"`
+	Severity        string            `json:"severity,omitempty"`
+	Source          string            `json:"source,omitempty"`
+	Summary         string            `json:"summary,omitempty"`
+	Description     string            `json:"description,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	TriggeredAt     string            `json:"triggered_at,omitempty"`
+	LinkedSessionID string            `json:"linked_session_id,omitempty"`
+}
+
+type ToolCall struct {
+	Name          string `json:"name,omitempty"`
+	ArgumentsJSON string `json:"arguments_json,omitempty"`
+	Outcome       string `json:"outcome,omitempty"`
+	Summary       string `json:"summary,omitempty"`
+}
+
+type TraceEvent struct {
+	Stage     string   `json:"stage,omitempty"`
+	Message   string   `json:"message,omitempty"`
+	Severity  string   `json:"severity,omitempty"`
+	Timestamp string   `json:"timestamp,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
 }
 
 type AlertAnalysisRequest struct {
@@ -35,6 +96,8 @@ type AlertAnalysisRequest struct {
 	Labels          map[string]string `json:"labels"`
 	TriggeredAt     string            `json:"triggered_at"`
 	LinkedSessionID string            `json:"linked_session_id"`
+	UserID          string            `json:"user_id,omitempty"`
+	UserRoles       []string          `json:"user_roles,omitempty"`
 }
 
 type AlertAnalysisResponse struct {
@@ -147,9 +210,13 @@ type Client interface {
 }
 
 type HTTPClient struct {
-	baseURL     string
-	httpClient  *http.Client
-	indexClient *http.Client
+	baseURL        string
+	httpClient     *http.Client
+	indexClient    *http.Client
+	healthClient   *http.Client
+	runtimeClient  aipb.RuntimeServiceClient
+	runtimeErr     error
+	runtimeTimeout time.Duration
 }
 
 type envelope[T any] struct {
@@ -174,6 +241,9 @@ func NewHTTPClient(cfg config.AIConfig) *HTTPClient {
 		indexTimeout = timeout
 	}
 
+	grpcClient := grpcclient.NewClient(cfg.GRPCTarget)
+	runtimeClient, runtimeErr := grpcClient.RuntimeClient()
+
 	return &HTTPClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
@@ -182,51 +252,106 @@ func NewHTTPClient(cfg config.AIConfig) *HTTPClient {
 		indexClient: &http.Client{
 			Timeout: indexTimeout,
 		},
+		healthClient: &http.Client{
+			Timeout: pingTimeout(cfg.PingTimeout, timeout),
+		},
+		runtimeClient:  runtimeClient,
+		runtimeErr:     runtimeErr,
+		runtimeTimeout: timeout,
 	}
 }
 
-func (c *HTTPClient) Chat(_ context.Context, _ ChatRequest) (ChatResponse, error) {
-	return ChatResponse{}, nil
+func (c *HTTPClient) Chat(ctx context.Context, request ChatRequest) (ChatResponse, error) {
+	ctx, cancel := c.runtimeCallContext(ctx, c.runtimeTimeout)
+	defer cancel()
+
+	client, err := c.grpcRuntimeClient()
+	if err != nil {
+		return ChatResponse{}, err
+	}
+
+	response, err := client.RunConversationTurn(ctx, &aipb.RunConversationTurnRequest{
+		Metadata: &commonpb.RequestMetadata{
+			SessionId: request.ConversationID,
+			UserId:    request.UserID,
+		},
+		SessionId:      request.ConversationID,
+		UserId:         request.UserID,
+		UserRoles:      append([]string(nil), request.UserRoles...),
+		Message:        request.Query,
+		History:        chatHistoryToProto(request.History),
+		LinkedAlert:    linkedAlertToProto(request.LinkedAlert),
+		AllowedTools:   append([]string(nil), request.AllowedTools...),
+		RetrievalLimit: int32(request.RetrievalLimit),
+	})
+	if err != nil {
+		return ChatResponse{}, err
+	}
+
+	citations := make([]string, 0, len(response.GetCitations()))
+	for _, citation := range response.GetCitations() {
+		if label := citationLabel(citation); label != "" {
+			citations = append(citations, label)
+		}
+	}
+
+	return ChatResponse{
+		Answer:    response.GetAnswer(),
+		Citations: citations,
+		Route:     response.GetRoute(),
+		Status:    response.GetStatus(),
+		Error:     response.GetError(),
+		ToolCalls: chatToolCallsFromProto(response.GetToolCalls()),
+		Trace:     traceEventsFromProto(response.GetTrace()),
+	}, nil
 }
 
 func (c *HTTPClient) AnalyzeAlert(ctx context.Context, request AlertAnalysisRequest) (AlertAnalysisResponse, error) {
-	payload, err := json.Marshal(request)
+	ctx, cancel := c.runtimeCallContext(ctx, c.runtimeTimeout)
+	defer cancel()
+
+	client, err := c.grpcRuntimeClient()
 	if err != nil {
 		return AlertAnalysisResponse{}, err
 	}
 
-	httpRequest, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		c.baseURL+"/api/v1/analysis/alert",
-		bytes.NewReader(payload),
-	)
+	response, err := client.AnalyzeAlert(ctx, &aipb.AnalyzeAlertRequest{
+		Metadata: &commonpb.RequestMetadata{
+			SessionId: request.LinkedSessionID,
+			UserId:    request.UserID,
+		},
+		AlertId:         request.AlertID,
+		Title:           request.Title,
+		Service:         request.Service,
+		Environment:     request.Environment,
+		Severity:        request.Severity,
+		Source:          request.Source,
+		Summary:         request.Summary,
+		Description:     request.Description,
+		Labels:          mapLabels(request.Labels),
+		TriggeredAt:     request.TriggeredAt,
+		LinkedSessionId: request.LinkedSessionID,
+		UserId:          request.UserID,
+		UserRoles:       append([]string(nil), request.UserRoles...),
+	})
 	if err != nil {
 		return AlertAnalysisResponse{}, err
 	}
-	httpRequest.Header.Set("Content-Type", "application/json")
 
-	response, err := c.httpClient.Do(httpRequest)
-	if err != nil {
-		return AlertAnalysisResponse{}, err
-	}
-	defer response.Body.Close()
-
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return AlertAnalysisResponse{}, err
-	}
-
-	if response.StatusCode >= http.StatusBadRequest {
-		return AlertAnalysisResponse{}, fmt.Errorf("python ai analyze alert failed: %s", strings.TrimSpace(string(body)))
-	}
-
-	var parsed envelope[AlertAnalysisResponse]
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return AlertAnalysisResponse{}, err
-	}
-
-	return parsed.Data, nil
+	return AlertAnalysisResponse{
+		Status:             response.GetStatus(),
+		Summary:            response.GetSummary(),
+		SeverityAssessment: response.GetSeverityAssessment(),
+		PossibleCauses:     append([]string(nil), response.GetPossibleCauses()...),
+		SuggestedActions:   append([]string(nil), response.GetSuggestedActions()...),
+		RecommendedTools:   append([]string(nil), response.GetRecommendedTools()...),
+		KnowledgeQueries:   append([]string(nil), response.GetKnowledgeQueries()...),
+		Workflow:           response.GetWorkflow(),
+		Confidence:         confidenceLabel(response.GetConfidence()),
+		Source:             response.GetSource(),
+		GeneratedAt:        response.GetGeneratedAt(),
+		Error:              response.GetError(),
+	}, nil
 }
 
 func (c *HTTPClient) IndexKnowledge(ctx context.Context, request RAGIndexRequest) (RAGIndexResponse, error) {
@@ -242,33 +367,210 @@ func (c *HTTPClient) DeleteKnowledge(ctx context.Context, request RAGDeleteReque
 }
 
 func (c *HTTPClient) Health(ctx context.Context) (HealthResponse, error) {
-	var zero HealthResponse
-
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/healthz", nil)
 	if err != nil {
-		return zero, err
+		return HealthResponse{}, err
 	}
 
-	response, err := c.httpClient.Do(httpRequest)
+	response, err := c.healthClient.Do(httpRequest)
 	if err != nil {
-		return zero, err
+		return HealthResponse{}, err
 	}
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return zero, err
+		return HealthResponse{}, err
 	}
 
 	if response.StatusCode >= http.StatusBadRequest {
-		return zero, fmt.Errorf("%s failed: %s", c.baseURL+"/healthz", strings.TrimSpace(string(body)))
+		return HealthResponse{}, fmt.Errorf("%s failed: %s", c.baseURL+"/healthz", strings.TrimSpace(string(body)))
 	}
 
 	var parsed envelope[HealthResponse]
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return zero, err
+		return HealthResponse{}, err
 	}
+
 	return parsed.Data, nil
+}
+
+func (c *HTTPClient) runtimeCallContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (c *HTTPClient) grpcRuntimeClient() (aipb.RuntimeServiceClient, error) {
+	if c == nil {
+		return nil, fmt.Errorf("grpc runtime client unavailable")
+	}
+	if c.runtimeErr != nil {
+		return nil, c.runtimeErr
+	}
+	if c.runtimeClient == nil {
+		return nil, fmt.Errorf("grpc runtime client unavailable")
+	}
+	return c.runtimeClient, nil
+}
+
+func pingTimeout(fallback, runtimeTimeout time.Duration) time.Duration {
+	if fallback > 0 {
+		return fallback
+	}
+	if runtimeTimeout > 0 {
+		return runtimeTimeout
+	}
+	return 2 * time.Second
+}
+
+func mapLabels(labels map[string]string) []string {
+	if len(labels) == 0 {
+		return nil
+	}
+
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, key+"="+labels[key])
+	}
+	return result
+}
+
+func citationLabel(citation *aipb.Citation) string {
+	if citation == nil {
+		return ""
+	}
+	if title := strings.TrimSpace(citation.GetTitle()); title != "" {
+		return title
+	}
+	if source := strings.TrimSpace(citation.GetSource()); source != "" {
+		return source
+	}
+	if documentID := strings.TrimSpace(citation.GetDocumentId()); documentID != "" {
+		return documentID
+	}
+	if url := strings.TrimSpace(citation.GetUrl()); url != "" {
+		return url
+	}
+	return strings.TrimSpace(citation.GetSnippet())
+}
+
+func confidenceLabel(confidence float32) string {
+	switch {
+	case confidence >= 0.8:
+		return "high"
+	case confidence >= 0.5:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+func chatHistoryToProto(history []ChatMessage) []*aipb.ConversationMessage {
+	if len(history) == 0 {
+		return nil
+	}
+
+	result := make([]*aipb.ConversationMessage, 0, len(history))
+	for _, item := range history {
+		result = append(result, &aipb.ConversationMessage{
+			Role:      item.Role,
+			Content:   item.Content,
+			AuthorId:  item.AuthorID,
+			CreatedAt: item.CreatedAt,
+			Citations: chatCitationsToProto(item.Citations),
+		})
+	}
+	return result
+}
+
+func chatCitationsToProto(citations []ChatCitation) []*aipb.Citation {
+	if len(citations) == 0 {
+		return nil
+	}
+
+	result := make([]*aipb.Citation, 0, len(citations))
+	for _, item := range citations {
+		result = append(result, &aipb.Citation{
+			Source:     item.Source,
+			Title:      item.Title,
+			Url:        item.URL,
+			Snippet:    item.Snippet,
+			DocumentId: item.DocumentID,
+			Score:      float32(item.Score),
+		})
+	}
+	return result
+}
+
+func linkedAlertToProto(linkedAlert *LinkedAlert) *aipb.LinkedAlert {
+	if linkedAlert == nil {
+		return nil
+	}
+	return &aipb.LinkedAlert{
+		AlertId:         linkedAlert.AlertID,
+		Title:           linkedAlert.Title,
+		Service:         linkedAlert.Service,
+		Environment:     linkedAlert.Environment,
+		Severity:        linkedAlert.Severity,
+		Source:          linkedAlert.Source,
+		Summary:         linkedAlert.Summary,
+		Description:     linkedAlert.Description,
+		Labels:          mapLabels(linkedAlert.Labels),
+		TriggeredAt:     linkedAlert.TriggeredAt,
+		LinkedSessionId: linkedAlert.LinkedSessionID,
+	}
+}
+
+func chatToolCallsFromProto(toolCalls []*aipb.ToolCall) []ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	result := make([]ToolCall, 0, len(toolCalls))
+	for _, item := range toolCalls {
+		if item == nil {
+			continue
+		}
+		result = append(result, ToolCall{
+			Name:          item.GetName(),
+			ArgumentsJSON: item.GetArgumentsJson(),
+			Outcome:       item.GetOutcome(),
+			Summary:       item.GetSummary(),
+		})
+	}
+	return result
+}
+
+func traceEventsFromProto(trace []*aipb.TraceEvent) []TraceEvent {
+	if len(trace) == 0 {
+		return nil
+	}
+
+	result := make([]TraceEvent, 0, len(trace))
+	for _, item := range trace {
+		if item == nil {
+			continue
+		}
+		result = append(result, TraceEvent{
+			Stage:     item.GetStage(),
+			Message:   item.GetMessage(),
+			Severity:  item.GetSeverity(),
+			Timestamp: item.GetTimestamp(),
+			Tags:      append([]string(nil), item.GetTags()...),
+		})
+	}
+	return result
 }
 
 func postJSON[T any](ctx context.Context, client *http.Client, url string, requestBody any) (T, error) {

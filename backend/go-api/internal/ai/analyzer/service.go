@@ -18,7 +18,7 @@ func NewService(orchestrator eino.Orchestrator) *Service {
 	return &Service{orchestrator: orchestrator}
 }
 
-func (s *Service) AnalyzeAlert(ctx context.Context, _ authDomain.User, alert alertDomain.Alert) alertDomain.AlertAnalysis {
+func (s *Service) AnalyzeAlert(ctx context.Context, user authDomain.User, alert alertDomain.Alert) alertDomain.AlertAnalysis {
 	if s == nil || s.orchestrator == nil {
 		return fallbackAnalysis(alert)
 	}
@@ -35,6 +35,8 @@ func (s *Service) AnalyzeAlert(ctx context.Context, _ authDomain.User, alert ale
 		Labels:          alert.Labels,
 		TriggeredAt:     alert.LastTriggeredAt.Format(time.RFC3339),
 		LinkedSessionID: alert.LinkedSessionID,
+		UserID:          user.ID,
+		UserRoles:       append([]string(nil), user.Roles...),
 	})
 	if err != nil {
 		analysis := fallbackAnalysis(alert)
