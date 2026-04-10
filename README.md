@@ -33,7 +33,7 @@ Project role split:
 
 - `frontend/web`: user console and workflow pages
 - `backend/go-api`: auth, sessions, knowledge, alerts, tools, audit, orchestration
-- `backend/python-ai`: AI analysis boundary and future LangChain/LangGraph workflows
+- `backend/python-ai`: AI runtime boundary with active LangGraph routing, RAG, and tool orchestration workflows
 
 Current implementation tradeoff:
 
@@ -76,6 +76,8 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_openai_api_key
 RUNTIME_API_MODEL=gpt-4.1-mini
 RUNTIME_API_TIMEOUT_SECONDS=30
+GO_API_BASE_URL=http://127.0.0.1:8080
+RUNTIME_SHARED_SECRET=oncall-runtime-secret
 EMBEDDING_PROVIDER=openai_compatible
 EMBEDDING_API_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536

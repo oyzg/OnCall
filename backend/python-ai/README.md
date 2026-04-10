@@ -4,7 +4,7 @@ This service hosts the AI runtime for AI OnCall:
 
 - FastAPI for HTTP health/debug endpoints
 - gRPC `RuntimeService` for Go-to-Python runtime calls
-- LangGraph-style routing for alert analysis and chat QA
+- LangGraph `StateGraph` routing for alert analysis and chat QA
 - OpenAI-compatible model access plus hybrid RAG
 
 ## Environment
@@ -25,12 +25,16 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_api_key
 RUNTIME_API_MODEL=gpt-4.1-mini
 RUNTIME_API_TIMEOUT_SECONDS=30
+GO_API_BASE_URL=http://127.0.0.1:8080
+RUNTIME_SHARED_SECRET=oncall-runtime-secret
 EMBEDDING_PROVIDER=openai_compatible
 EMBEDDING_API_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536
 ```
 
 If `OPENAI_API_KEY` is missing, the runtime falls back to deterministic local responses. That keeps development and tests runnable, but it is not real model inference.
+
+`GO_API_BASE_URL` and `RUNTIME_SHARED_SECRET` are required when the runtime executes tools through the Go API. Local tests can still inject fake gateways without these values.
 
 ## Local Startup
 
@@ -53,6 +57,8 @@ cd ../..
 
 Current runtime behavior:
 
-- Alert analysis is routed through the runtime and returns structured fields plus trace events
-- Chat QA is routed through the runtime and Go still streams by chunking the fully buffered answer
+- Router graph only chooses `alert_analysis` or `chat_qa`
+- Alert analysis and chat QA both run as real LangGraph business graphs
+- RAG retrieval and tool execution happen inside the business graphs and emit trace events
+- Chat QA is still buffered in Python and streamed by chunking in Go
 - `/healthz` reports runtime model, gRPC endpoint assumptions, embedding readiness, Elasticsearch, and Milvus state
