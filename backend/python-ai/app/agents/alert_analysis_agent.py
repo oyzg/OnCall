@@ -28,35 +28,33 @@ class AlertAnalysisAgent:
             self.tool_agent = ToolAgent(llm_client=self.llm_client)
 
     def analyze(self, request: runtime_pb2.AnalyzeAlertRequest) -> AlertAnalysisResult:
-        fallback = self._fallback_payload(request)
-        prompt = self._build_prompt(request, fallback, {}, [])
-        structured = self.llm_client.complete_structured(prompt=prompt, fallback=fallback)
-        structured_recommended_tools = self._normalize_list(
-            structured.get("recommended_tools"),
-            fallback["recommended_tools"],
+        fallback = self.prepare_alert_context(request)
+        rag_references, trace = self.retrieve_alert_context(request, list(fallback["knowledge_queries"]))
+        decision = self.decide_alert_tools(request, fallback, rag_references, list(fallback["knowledge_queries"]))
+        trace.extend(decision["trace"])
+        execution = self.execute_alert_tools(request, decision["recommended_tools"])
+        trace.extend(execution["trace"])
+        return self.finalize_alert_analysis(
+            request=request,
+            fallback=fallback,
+            structured=decision["structured"],
+            recommended_tools=decision["recommended_tools"],
+            knowledge_queries=decision["knowledge_queries"],
+            suggested_actions=decision["suggested_actions"],
+            trace=trace,
+            tool_suggested_actions=execution["suggested_actions"],
         )
-        tool_context = self._tool_context(request, structured_recommended_tools)
-        knowledge_queries = self._merge_unique(
-            self._normalize_list(structured.get("knowledge_queries"), fallback["knowledge_queries"]),
-            tool_context.get("knowledge_queries", []),
-        )
+
+    def prepare_alert_context(self, request: runtime_pb2.AnalyzeAlertRequest) -> dict[str, object]:
+        return self._fallback_payload(request)
+
+    def retrieve_alert_context(
+        self,
+        request: runtime_pb2.AnalyzeAlertRequest,
+        knowledge_queries: list[str],
+    ) -> tuple[list[RAGReference], list[TraceEntry]]:
         rag_references = self._retrieve_rag_references(knowledge_queries)
-
-        suggested_actions = self._merge_unique(
-            self._normalize_list(structured.get("suggested_actions"), fallback["suggested_actions"]),
-            tool_context.get("suggested_actions", []),
-            self._rag_suggested_actions(rag_references),
-        )
-        recommended_tools = self._merge_unique(
-            structured_recommended_tools,
-            tool_context.get("recommended_tools", []),
-        )
-        knowledge_queries = self._merge_unique(
-            self._normalize_list(structured.get("knowledge_queries"), knowledge_queries),
-            knowledge_queries,
-        )
-
-        trace = self._normalize_trace(tool_context.get("trace", []))
+        trace: list[TraceEntry] = []
         if rag_references:
             trace.append(
                 TraceEntry(
@@ -65,32 +63,95 @@ class AlertAnalysisAgent:
                     tags=self._trace_tags(request),
                 )
             )
-        trace.append(
+        return rag_references, trace
+
+    def decide_alert_tools(
+        self,
+        request: runtime_pb2.AnalyzeAlertRequest,
+        fallback: dict[str, object],
+        rag_references: list[RAGReference],
+        knowledge_queries: list[str],
+    ) -> dict[str, object]:
+        prompt = self._build_prompt(request, fallback, {}, rag_references)
+        structured = self.llm_client.complete_structured(prompt=prompt, fallback=fallback)
+        structured_recommended_tools = self._normalize_list(
+            structured.get("recommended_tools"),
+            fallback["recommended_tools"],
+        )
+        tool_context = self._tool_context(request, structured_recommended_tools)
+        merged_knowledge_queries = self._merge_unique(
+            knowledge_queries,
+            self._normalize_list(structured.get("knowledge_queries"), fallback["knowledge_queries"]),
+            tool_context.get("knowledge_queries", []),
+        )
+        return {
+            "structured": structured,
+            "recommended_tools": self._merge_unique(
+                structured_recommended_tools,
+                tool_context.get("recommended_tools", []),
+            ),
+            "knowledge_queries": merged_knowledge_queries,
+            "suggested_actions": self._merge_unique(
+                self._normalize_list(structured.get("suggested_actions"), fallback["suggested_actions"]),
+                tool_context.get("suggested_actions", []),
+                self._rag_suggested_actions(rag_references),
+            ),
+            "trace": self._normalize_trace(tool_context.get("trace", [])),
+        }
+
+    def execute_alert_tools(
+        self,
+        request: runtime_pb2.AnalyzeAlertRequest,
+        recommended_tools: list[str],
+    ) -> dict[str, object]:
+        if self.tool_agent is None or not hasattr(self.tool_agent, "execute_alert_tools"):
+            return {"suggested_actions": [], "trace": []}
+        execution = self.tool_agent.execute_alert_tools(request, recommended_tools, limit=2)
+        if not isinstance(execution, dict):
+            return {"suggested_actions": [], "trace": []}
+        return {
+            "suggested_actions": self._normalize_list(execution.get("suggested_actions"), []),
+            "trace": self._normalize_trace(execution.get("trace", [])),
+        }
+
+    def finalize_alert_analysis(
+        self,
+        *,
+        request: runtime_pb2.AnalyzeAlertRequest,
+        fallback: dict[str, object],
+        structured: dict[str, object],
+        recommended_tools: list[str],
+        knowledge_queries: list[str],
+        suggested_actions: list[str],
+        trace: list[TraceEntry],
+        tool_suggested_actions: list[str],
+    ) -> AlertAnalysisResult:
+        final_trace = list(trace)
+        final_trace.append(
             TraceEntry(
                 stage="alert_analysis",
                 message="generated structured alert analysis",
                 tags=self._trace_tags(request),
             )
         )
-
         return AlertAnalysisResult(
-            summary=self._normalize_text(structured.get("summary"), fallback["summary"]),
+            summary=self._normalize_text(structured.get("summary"), str(fallback["summary"])),
             severity_assessment=self._normalize_text(
                 structured.get("severity_assessment"),
-                fallback["severity_assessment"],
+                str(fallback["severity_assessment"]),
             ),
             possible_causes=self._normalize_list(
                 structured.get("possible_causes"),
-                fallback["possible_causes"],
+                list(fallback["possible_causes"]),
             ),
-            suggested_actions=suggested_actions,
+            suggested_actions=self._merge_unique(suggested_actions, tool_suggested_actions),
             recommended_tools=recommended_tools,
             knowledge_queries=knowledge_queries,
             workflow="router_alert_analysis",
             confidence=0.9 if (request.severity.strip().upper() or "P3") in {"P0", "P1"} else 0.6,
-            source="python-ai-runtime-router-alert-agent",
+            source="python-ai-runtime-router-alert-graph",
             generated_at=datetime.now(UTC).isoformat(),
-            trace=trace,
+            trace=final_trace,
         )
 
     def _fallback_payload(self, request: runtime_pb2.AnalyzeAlertRequest) -> dict[str, object]:

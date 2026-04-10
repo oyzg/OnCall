@@ -195,7 +195,7 @@ class RuntimeServiceTest(unittest.TestCase):
         self.assertIn("reset the cache", response.answer)
         self.assertEqual([], list(response.tool_calls))
 
-    def test_run_conversation_turn_routes_tool_requests(self) -> None:
+    def test_run_conversation_turn_executes_tools_inside_chat_workflow(self) -> None:
         response = self.service.RunConversationTurn(
             runtime_pb2.RunConversationTurnRequest(
                 metadata=metadata_pb2.RequestMetadata(
@@ -215,12 +215,15 @@ class RuntimeServiceTest(unittest.TestCase):
         )
 
         self.assertEqual("ready", response.status)
-        self.assertEqual("tool", response.route)
+        self.assertEqual("chat_qa", response.route)
         self.assertTrue(response.tool_calls)
         self.assertEqual("service_status", response.tool_calls[0].name)
         self.assertEqual("success", response.tool_calls[0].outcome)
         self.assertIn("service", response.tool_calls[0].arguments_json)
-        self.assertEqual("tool", response.trace[-1].stage)
+        stages = [entry.stage for entry in response.trace]
+        self.assertIn("router", stages)
+        self.assertIn("tool", stages)
+        self.assertEqual("chat_qa", response.trace[-1].stage)
 
     @patch("app.grpc.server.grpc.server")
     def test_create_server_fails_fast_when_bind_fails(self, grpc_server_factory: MagicMock) -> None:

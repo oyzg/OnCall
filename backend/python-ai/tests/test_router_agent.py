@@ -69,7 +69,7 @@ class RouterAgentTest(unittest.TestCase):
         self.assertEqual("chat_qa", decision.route)
         self.assertIn("general conversation", decision.reason)
 
-    def test_routes_tool_requests_when_allowed_tools_exist(self) -> None:
+    def test_keeps_tool_eligible_questions_in_chat_route_for_business_graph_execution(self) -> None:
         decision = self.agent.route(
             runtime_pb2.RunConversationTurnRequest(
                 metadata=metadata_pb2.RequestMetadata(
@@ -87,8 +87,9 @@ class RouterAgentTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual("tool", decision.route)
-        self.assertIn("allowed tools", decision.reason)
+        self.assertEqual("chat_qa", decision.route)
+        self.assertTrue(decision.needs_tooling)
+        self.assertIn("business graph", decision.reason)
 
 
 if __name__ == "__main__":

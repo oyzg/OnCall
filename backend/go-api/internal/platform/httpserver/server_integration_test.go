@@ -116,8 +116,11 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	if !strings.Contains(analyzeBody, `"workflow":"router_alert_analysis"`) {
 		t.Fatalf("expected runtime workflow in analysis result, got %s", analyzeBody)
 	}
-	if !strings.Contains(analyzeBody, `"source":"python-ai-runtime-router-alert-agent"`) {
+	if !strings.Contains(analyzeBody, `"source":"python-ai-runtime-router-alert-graph"`) {
 		t.Fatalf("expected runtime source in analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"trace"`) || !strings.Contains(analyzeBody, `"stage":"router"`) {
+		t.Fatalf("expected runtime trace in analysis result, got %s", analyzeBody)
 	}
 
 	toolBody := request(t, router, http.MethodPost, "/api/v1/tools/knowledge_search/call", `{"parameters":{"query":"user-service error ratio increased","limit":2}}`, token, "application/json", http.StatusOK)
@@ -245,8 +248,13 @@ func (fakeRuntimeService) AnalyzeAlert(_ context.Context, request *aipb.AnalyzeA
 		KnowledgeQueries: []string{request.GetService() + " " + request.GetTitle()},
 		Workflow:         "router_alert_analysis",
 		Confidence:       0.92,
-		Source:           "python-ai-runtime-router-alert-agent",
+		Source:           "python-ai-runtime-router-alert-graph",
 		GeneratedAt:      "2026-04-09T10:00:00Z",
+		Trace: []*aipb.TraceEvent{
+			{Stage: "router", Message: "alert route selected", Severity: "info"},
+			{Stage: "tool", Message: "executed service_status", Severity: "info"},
+			{Stage: "alert_analysis", Message: "generated structured alert analysis", Severity: "info"},
+		},
 	}, nil
 }
 

@@ -102,18 +102,19 @@ type AlertAnalysisRequest struct {
 }
 
 type AlertAnalysisResponse struct {
-	Status             string   `json:"status"`
-	Summary            string   `json:"summary"`
-	SeverityAssessment string   `json:"severity_assessment"`
-	PossibleCauses     []string `json:"possible_causes"`
-	SuggestedActions   []string `json:"suggested_actions"`
-	RecommendedTools   []string `json:"recommended_tools"`
-	KnowledgeQueries   []string `json:"knowledge_queries"`
-	Workflow           string   `json:"workflow"`
-	Confidence         string   `json:"confidence"`
-	Source             string   `json:"source"`
-	GeneratedAt        string   `json:"generated_at"`
-	Error              string   `json:"error"`
+	Status             string       `json:"status"`
+	Summary            string       `json:"summary"`
+	SeverityAssessment string       `json:"severity_assessment"`
+	PossibleCauses     []string     `json:"possible_causes"`
+	SuggestedActions   []string     `json:"suggested_actions"`
+	RecommendedTools   []string     `json:"recommended_tools"`
+	KnowledgeQueries   []string     `json:"knowledge_queries"`
+	Workflow           string       `json:"workflow"`
+	Confidence         string       `json:"confidence"`
+	Source             string       `json:"source"`
+	GeneratedAt        string       `json:"generated_at"`
+	Error              string       `json:"error"`
+	Trace              []TraceEvent `json:"trace,omitempty"`
 }
 
 type RAGIndexChunk struct {
@@ -353,6 +354,7 @@ func (c *HTTPClient) AnalyzeAlert(ctx context.Context, request AlertAnalysisRequ
 		Source:             response.GetSource(),
 		GeneratedAt:        response.GetGeneratedAt(),
 		Error:              response.GetError(),
+		Trace:              traceEventsFromProto(response.GetTrace()),
 	}, nil
 }
 

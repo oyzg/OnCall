@@ -155,6 +155,45 @@
               <p class="analysis-summary">{{ alertAnalysis.summary }}</p>
               <p class="analysis-assessment">{{ alertAnalysis.severity_assessment }}</p>
 
+              <div class="analysis-diagnostics">
+                <div class="message-meta">
+                  <span v-if="alertAnalysis.workflow" class="route-chip">Workflow: {{ alertAnalysis.workflow }}</span>
+                  <span v-if="alertAnalysis.source" class="route-chip">Source: {{ alertAnalysis.source }}</span>
+                  <span v-if="alertAnalysis.trace?.length" class="meta-count">Trace: {{ alertAnalysis.trace.length }}</span>
+                </div>
+
+                <div v-if="alertAnalysis.recommended_tools.length" class="tool-call-list">
+                  <div
+                    v-for="tool in alertAnalysis.recommended_tools"
+                    :key="tool"
+                    class="tool-call-card"
+                  >
+                    <header>
+                      <strong>{{ tool }}</strong>
+                      <span>recommended</span>
+                    </header>
+                    <p>{{ toolSummary(tool) }}</p>
+                  </div>
+                </div>
+
+                <div v-if="alertAnalysis.trace?.length" class="trace-list">
+                  <div
+                    v-for="(trace, index) in alertAnalysis.trace"
+                    :key="`${activeAlert?.id || 'alert'}-${trace.stage}-${index}`"
+                    class="trace-item"
+                  >
+                    <div class="trace-stage">
+                      <strong>{{ trace.stage }}</strong>
+                      <span>{{ trace.severity || "info" }}</span>
+                    </div>
+                    <p>{{ trace.message }}</p>
+                    <small v-if="trace.timestamp || trace.tags?.length">
+                      {{ [trace.timestamp ? formatTraceTime(trace.timestamp) : "", trace.tags?.length ? trace.tags.join(" · ") : ""].filter(Boolean).join(" · ") }}
+                    </small>
+                  </div>
+                </div>
+              </div>
+
               <div class="analysis-grid">
                 <div>
                   <h5>可能原因</h5>
@@ -417,6 +456,26 @@ function formatTime(value: string) {
     second: "2-digit",
   });
 }
+
+function formatTraceTime(value: string) {
+  return formatTime(value);
+}
+
+function toolSummary(tool: string) {
+  if (tool === "service_status") {
+    return "检查服务健康、环境状态和当前风险等级。";
+  }
+  if (tool === "recent_alerts") {
+    return "回看最近相关告警，判断是否为同一波故障或持续抖动。";
+  }
+  if (tool === "knowledge_search") {
+    return "检索 SOP、runbook 和历史案例，补足处置上下文。";
+  }
+  if (tool === "platform_overview") {
+    return "查看平台级风险面，确认是否存在更广的基础设施异常。";
+  }
+  return "结合当前分析结果继续补充诊断上下文。";
+}
 </script>
 
 <style scoped>
@@ -535,6 +594,11 @@ function formatTime(value: string) {
   gap: 16px;
 }
 
+.analysis-diagnostics {
+  display: grid;
+  gap: 12px;
+}
+
 .analysis-header {
   margin-bottom: 14px;
 }
@@ -556,6 +620,57 @@ function formatTime(value: string) {
 .analysis-footer,
 .analysis-error {
   margin: 0;
+}
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.route-chip,
+.meta-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+  font-size: 12px;
+}
+
+.tool-call-list,
+.trace-list {
+  display: grid;
+  gap: 10px;
+}
+
+.tool-call-card,
+.trace-item {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.tool-call-card header,
+.trace-stage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool-call-card p,
+.trace-item p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #334155;
+}
+
+.trace-item small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
 }
 
 .analysis-assessment,

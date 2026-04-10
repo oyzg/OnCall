@@ -43,6 +43,9 @@ func (c *captureOrchestrator) HandleAlertAnalysis(_ context.Context, request gat
 		SeverityAssessment: "captured severity",
 		Confidence:         "high",
 		GeneratedAt:        "2026-04-09T10:00:00Z",
+		Trace: []gateway.TraceEvent{
+			{Stage: "router", Message: "alert route selected", Severity: "info"},
+		},
 	}, nil
 }
 
@@ -71,6 +74,9 @@ func TestAnalyzeAlertFallsBackWhenRuntimeUnavailable(t *testing.T) {
 	}
 	if analysis.Workflow != "go_fallback_rule_analysis" {
 		t.Fatalf("expected fallback workflow, got %s", analysis.Workflow)
+	}
+	if len(analysis.Trace) == 0 || analysis.Trace[0].Stage != "alert_analysis" {
+		t.Fatalf("expected fallback trace, got %#v", analysis.Trace)
 	}
 }
 
@@ -106,5 +112,8 @@ func TestAnalyzeAlertPassesUserContextToGateway(t *testing.T) {
 	}
 	if orchestrator.request.AlertID != "alert-1" {
 		t.Fatalf("expected alert id to be forwarded, got %s", orchestrator.request.AlertID)
+	}
+	if len(analysis.Trace) != 1 || analysis.Trace[0].Stage != "router" {
+		t.Fatalf("expected runtime trace to be mapped, got %#v", analysis.Trace)
 	}
 }

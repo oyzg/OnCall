@@ -23,16 +23,25 @@ type Alert struct {
 }
 
 type AlertAnalysis struct {
-	Status             string    `json:"status"`
-	Summary            string    `json:"summary"`
-	SeverityAssessment string    `json:"severity_assessment"`
-	PossibleCauses     []string  `json:"possible_causes,omitempty"`
-	SuggestedActions   []string  `json:"suggested_actions,omitempty"`
-	RecommendedTools   []string  `json:"recommended_tools,omitempty"`
-	KnowledgeQueries   []string  `json:"knowledge_queries,omitempty"`
-	Workflow           string    `json:"workflow,omitempty"`
-	Confidence         string    `json:"confidence,omitempty"`
-	Source             string    `json:"source,omitempty"`
-	GeneratedAt        time.Time `json:"generated_at"`
-	Error              string    `json:"error,omitempty"`
+	Status             string       `json:"status"`
+	Summary            string       `json:"summary"`
+	SeverityAssessment string       `json:"severity_assessment"`
+	PossibleCauses     []string     `json:"possible_causes,omitempty"`
+	SuggestedActions   []string     `json:"suggested_actions,omitempty"`
+	RecommendedTools   []string     `json:"recommended_tools,omitempty"`
+	KnowledgeQueries   []string     `json:"knowledge_queries,omitempty"`
+	Workflow           string       `json:"workflow,omitempty"`
+	Confidence         string       `json:"confidence,omitempty"`
+	Source             string       `json:"source,omitempty"`
+	GeneratedAt        time.Time    `json:"generated_at"`
+	Error              string       `json:"error,omitempty"`
+	Trace              []TraceEvent `json:"trace,omitempty"`
+}
+
+type TraceEvent struct {
+	Stage     string   `json:"stage,omitempty"`
+	Message   string   `json:"message,omitempty"`
+	Severity  string   `json:"severity,omitempty"`
+	Timestamp string   `json:"timestamp,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
 }

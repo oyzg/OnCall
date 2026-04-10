@@ -67,6 +67,10 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 					Confidence:         0.9,
 					Source:             "python-ai-runtime",
 					GeneratedAt:        "2026-04-09T10:00:00Z",
+					Trace: []*aipb.TraceEvent{
+						{Stage: "router", Message: "alert route selected", Severity: "info"},
+						{Stage: "alert_analysis", Message: "generated analysis", Severity: "info"},
+					},
 				}, nil
 			},
 		},
@@ -100,6 +104,9 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 	}
 	if response.Summary != "grpc summary" {
 		t.Fatalf("unexpected summary: %s", response.Summary)
+	}
+	if len(response.Trace) != 2 || response.Trace[0].Stage != "router" {
+		t.Fatalf("unexpected trace: %#v", response.Trace)
 	}
 
 	if captured == nil {

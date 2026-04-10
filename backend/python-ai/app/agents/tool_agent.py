@@ -51,6 +51,9 @@ class ToolAgent:
             ],
         }
 
+    def select_tool(self, request: runtime_pb2.RunConversationTurnRequest) -> str:
+        return self._select_tool(request)
+
     def execute(self, request: runtime_pb2.RunConversationTurnRequest) -> ConversationTurnResult:
         selected_tool = self._select_tool(request)
         if not selected_tool:
@@ -70,22 +73,81 @@ class ToolAgent:
                 ],
             )
 
-        parameters = self._build_parameters(selected_tool, request)
+        return self.execute_selected_tool(request, selected_tool)
+
+    def execute_selected_tool(
+        self,
+        request: runtime_pb2.RunConversationTurnRequest,
+        tool_name: str,
+    ) -> ConversationTurnResult:
+        parameters = self._build_parameters(tool_name, request)
+        return self._execute_named_tool(
+            user_id=request.user_id,
+            user_roles=list(request.user_roles),
+            tool_name=tool_name,
+            parameters=parameters,
+            route="tool",
+            trace_tags=[request.metadata.request_id, request.session_id, tool_name],
+        )
+
+    def execute_alert_tools(
+        self,
+        request: runtime_pb2.AnalyzeAlertRequest,
+        recommended_tools: list[str],
+        *,
+        limit: int = 2,
+    ) -> dict[str, Any]:
+        normalized_tools = self._normalize_alert_tools(request, recommended_tools)
+        tool_calls: list[ToolCallEntry] = []
+        trace: list[TraceEntry] = []
+        suggested_actions: list[str] = []
+
+        for tool_name in normalized_tools[:limit]:
+            result = self._execute_named_tool(
+                user_id=request.user_id,
+                user_roles=list(request.user_roles),
+                tool_name=tool_name,
+                parameters=self._build_alert_parameters(tool_name, request),
+                route="alert_analysis",
+                trace_tags=[request.metadata.request_id, request.alert_id, request.service, tool_name],
+            )
+            tool_calls.extend(result.tool_calls)
+            trace.extend(result.trace)
+            for tool_call in result.tool_calls:
+                if tool_call.summary:
+                    suggested_actions.append(f"Use {tool_name}: {tool_call.summary}")
+
+        return {
+            "tool_calls": tool_calls,
+            "suggested_actions": suggested_actions,
+            "trace": trace,
+        }
+
+    def _execute_named_tool(
+        self,
+        *,
+        user_id: str,
+        user_roles: list[str],
+        tool_name: str,
+        parameters: dict[str, object],
+        route: str,
+        trace_tags: list[str],
+    ) -> ConversationTurnResult:
         arguments_json = json.dumps(parameters, ensure_ascii=True, sort_keys=True)
         trace = [
             TraceEntry(
                 stage="tool",
-                message=f"selected {selected_tool} for execution",
+                message=f"selected {tool_name} for execution",
                 timestamp=datetime.now(UTC).isoformat(),
-                tags=[request.metadata.request_id, request.session_id, selected_tool],
+                tags=[tag for tag in trace_tags if tag],
             )
         ]
 
         try:
             gateway_result = self.tool_gateway.execute_tool(
-                user_id=request.user_id,
-                user_roles=list(request.user_roles),
-                tool_name=selected_tool,
+                user_id=user_id,
+                user_roles=user_roles,
+                tool_name=tool_name,
                 parameters=parameters,
             )
         except Exception as exc:
@@ -93,49 +155,49 @@ class ToolAgent:
             trace.append(
                 TraceEntry(
                     stage="tool",
-                    message=f"{selected_tool} execution failed: {message}",
+                    message=f"{tool_name} execution failed: {message}",
                     severity="error",
                     timestamp=datetime.now(UTC).isoformat(),
-                    tags=[request.metadata.request_id, request.session_id, selected_tool],
+                    tags=[tag for tag in trace_tags if tag],
                 )
             )
             return ConversationTurnResult(
-                answer=f"Tool execution failed for {selected_tool}: {message}",
+                answer=f"Tool execution failed for {tool_name}: {message}",
                 tool_calls=[
                     ToolCallEntry(
-                        name=selected_tool,
+                        name=tool_name,
                         arguments_json=arguments_json,
                         outcome="failed",
                         summary=message,
                     )
                 ],
-                route="tool",
+                route=route,
                 status="failed",
                 error=message,
                 trace=trace,
             )
 
         result = gateway_result.get("result")
-        summary = self._summarize_result(selected_tool, result)
+        summary = self._summarize_result(tool_name, result)
         trace.append(
             TraceEntry(
                 stage="tool",
-                message=f"executed {selected_tool} successfully",
+                message=f"executed {tool_name} successfully",
                 timestamp=datetime.now(UTC).isoformat(),
-                tags=[request.metadata.request_id, request.session_id, selected_tool],
+                tags=[tag for tag in trace_tags if tag],
             )
         )
         return ConversationTurnResult(
             answer=summary,
             tool_calls=[
                 ToolCallEntry(
-                    name=selected_tool,
+                    name=tool_name,
                     arguments_json=arguments_json,
                     outcome=str(gateway_result.get("status") or "success"),
                     summary=summary,
                 )
             ],
-            route="tool",
+            route=route,
             status="ready",
             trace=trace,
         )
@@ -179,6 +241,34 @@ class ToolAgent:
             return params
         return {}
 
+    def _build_alert_parameters(
+        self,
+        tool_name: str,
+        request: runtime_pb2.AnalyzeAlertRequest,
+    ) -> dict[str, object]:
+        if tool_name == "knowledge_search":
+            query = " ".join(part for part in [request.service, request.title or request.summary] if part).strip()
+            return {"query": query, "limit": 3}
+        if tool_name == "service_status":
+            params: dict[str, object] = {}
+            if request.service.strip():
+                params["service"] = request.service.strip()
+            if request.environment.strip():
+                params["environment"] = request.environment.strip()
+            return params
+        if tool_name == "recent_alerts":
+            params = {"limit": 5}
+            if request.service.strip():
+                params["service"] = request.service.strip()
+            params["status"] = "open"
+            return params
+        if tool_name == "platform_overview":
+            params = {}
+            if request.environment.strip():
+                params["environment"] = request.environment.strip()
+            return params
+        return {}
+
     def _extract_service_name(self, request: runtime_pb2.RunConversationTurnRequest) -> str:
         if request.HasField("linked_alert") and request.linked_alert.service.strip():
             return request.linked_alert.service.strip()
@@ -217,6 +307,10 @@ class ToolAgent:
                 environment = result.get("environment") or "the current environment"
                 risk = result.get("risk") or result.get("status") or "unknown"
                 return f"Executed service_status for {service} in {environment}. Current risk is {risk}."
+            if tool_name == "platform_overview":
+                environment = result.get("environment") or "the current environment"
+                risk = result.get("risk") or result.get("status") or "unknown"
+                return f"Executed platform_overview for {environment}. Current platform risk is {risk}."
             if tool_name == "knowledge_search":
                 answer = result.get("answer")
                 if isinstance(answer, str) and answer.strip():

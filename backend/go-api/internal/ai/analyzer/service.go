@@ -70,6 +70,7 @@ func (s *Service) AnalyzeAlert(ctx context.Context, user authDomain.User, alert 
 		Source:             response.Source,
 		GeneratedAt:        generatedAt,
 		Error:              response.Error,
+		Trace:              toAlertTrace(response.Trace),
 	}
 }
 
@@ -95,5 +96,30 @@ func fallbackAnalysis(alert alertDomain.Alert) alertDomain.AlertAnalysis {
 		Confidence:  "medium",
 		Source:      "go-fallback-analyzer",
 		GeneratedAt: time.Now(),
+		Trace: []alertDomain.TraceEvent{
+			{
+				Stage:    "alert_analysis",
+				Message:  "used go fallback analyzer because python runtime was unavailable",
+				Severity: "warning",
+			},
+		},
 	}
+}
+
+func toAlertTrace(items []gateway.TraceEvent) []alertDomain.TraceEvent {
+	if len(items) == 0 {
+		return nil
+	}
+
+	result := make([]alertDomain.TraceEvent, 0, len(items))
+	for _, item := range items {
+		result = append(result, alertDomain.TraceEvent{
+			Stage:     item.Stage,
+			Message:   item.Message,
+			Severity:  item.Severity,
+			Timestamp: item.Timestamp,
+			Tags:      append([]string(nil), item.Tags...),
+		})
+	}
+	return result
 }

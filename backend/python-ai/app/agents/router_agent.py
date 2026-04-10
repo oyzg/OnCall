@@ -18,6 +18,8 @@ class RouterAgent:
             return RouterDecision(
                 route="alert_analysis",
                 reason=reason,
+                needs_rag=True,
+                needs_tooling=True,
                 trace=[TraceEntry(stage="router", message=reason, tags=self._tags_for_alert_request(request))],
             )
 
@@ -30,15 +32,19 @@ class RouterAgent:
             return RouterDecision(
                 route="alert_analysis",
                 reason=reason,
+                needs_rag=True,
+                needs_tooling=True,
                 trace=[TraceEntry(stage="router", message=reason, tags=self._tags_for_conversation_request(request))],
             )
 
         tool_keywords = ("tool", "lookup", "check", "execute", "run")
         if allowed_tools and any(keyword in message for keyword in tool_keywords):
-            reason = "tool keywords matched and allowed tools are available"
+            reason = "tool-eligible chat request will be handled inside the business graph"
             return RouterDecision(
-                route="tool",
+                route="chat_qa",
                 reason=reason,
+                needs_rag=True,
+                needs_tooling=True,
                 trace=[TraceEntry(stage="router", message=reason, tags=self._tags_for_conversation_request(request))],
             )
 
@@ -46,6 +52,7 @@ class RouterAgent:
         return RouterDecision(
             route="chat_qa",
             reason=reason,
+            needs_rag=bool(message),
             trace=[TraceEntry(stage="router", message=reason, tags=self._tags_for_conversation_request(request))],
         )
 

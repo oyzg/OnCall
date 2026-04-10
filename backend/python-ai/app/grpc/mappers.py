@@ -51,6 +51,8 @@ class ToolCallEntry:
 class RouterDecision:
     route: str
     reason: str
+    needs_rag: bool = False
+    needs_tooling: bool = False
     trace: list[TraceEntry] = field(default_factory=list)
 
 

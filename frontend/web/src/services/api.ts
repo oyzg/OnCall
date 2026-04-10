@@ -209,6 +209,7 @@ export interface AlertAnalysis {
   source: string;
   generated_at: string;
   error?: string;
+  trace?: ChatTraceEvent[];
 }
 
 export interface ToolParameter {
