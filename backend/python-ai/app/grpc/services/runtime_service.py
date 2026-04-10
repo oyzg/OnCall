@@ -40,7 +40,13 @@ class RuntimeService(runtime_pb2_grpc.RuntimeServiceServicer):
         self.chat_qa_graph = build_chat_qa_graph(self.chat_qa_agent)
 
     def AnalyzeAlert(self, request: runtime_pb2.AnalyzeAlertRequest, context=None) -> runtime_pb2.AnalyzeAlertResponse:
+        decision = self.router_graph.invoke(request)
         result = self.alert_analysis_graph.invoke(request)
+        result.trace = decision.trace + result.trace
+        if not result.workflow:
+            result.workflow = decision.route or "alert_analysis"
+        if not result.source:
+            result.source = "python-ai-runtime-router"
         return alert_result_to_proto(result)
 
     def RunConversationTurn(

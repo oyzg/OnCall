@@ -20,7 +20,7 @@ class RuntimeServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.service = RuntimeService()
 
-    def test_analyze_alert_returns_deterministic_proto_response(self) -> None:
+    def test_analyze_alert_returns_router_backed_proto_response(self) -> None:
         response = self.service.AnalyzeAlert(
             runtime_pb2.AnalyzeAlertRequest(
                 metadata=metadata_pb2.RequestMetadata(
@@ -46,9 +46,10 @@ class RuntimeServiceTest(unittest.TestCase):
         )
 
         self.assertEqual("ready", response.status)
-        self.assertEqual("alert_analysis", response.workflow)
+        self.assertEqual("router_alert_analysis", response.workflow)
         self.assertIn("payment-api", response.summary)
         self.assertTrue(response.trace)
+        self.assertEqual("router", response.trace[0].stage)
         self.assertEqual("alert_analysis", response.trace[-1].stage)
 
     def test_run_conversation_turn_routes_alert_analysis_requests(self) -> None:

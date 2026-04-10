@@ -159,6 +159,36 @@ class HybridRAGService:
             lexical_backend=lexical_backend,
         )
 
+    def retrieve_alert_context(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 2,
+        category: str = "",
+    ) -> list[RAGReference]:
+        references: list[RAGReference] = []
+        seen: set[tuple[str, int]] = set()
+
+        for raw_query in queries:
+            query = raw_query.strip()
+            if not query:
+                continue
+            try:
+                response = self.retrieve(RAGRetrieveRequest(query=query, category=category, limit=limit))
+            except Exception:
+                continue
+
+            for reference in response.references:
+                key = (reference.document_id, reference.chunk_index)
+                if key in seen:
+                    continue
+                seen.add(key)
+                references.append(reference)
+                if len(references) >= limit:
+                    return references
+
+        return references
+
     def _validate_embeddings(self, embeddings: list[list[float]], expected_count: int) -> None:
         if len(embeddings) != expected_count:
             raise AppError(

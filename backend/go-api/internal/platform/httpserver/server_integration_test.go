@@ -2,9 +2,11 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +16,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	aipb "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/logger"
+	"google.golang.org/grpc"
 )
 
 type envelope[T any] struct {
@@ -37,31 +41,11 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 		_ = os.Chdir(originalWD)
 	}()
 
+	runtimeTarget, stopRuntime := startRuntimeServer(t)
+	defer stopRuntime()
+
 	gin.SetMode(gin.TestMode)
-	router := New(config.Config{
-		App: config.AppConfig{
-			Name:     "go-api",
-			Env:      "test",
-			LogLevel: "ERROR",
-		},
-		MySQL: config.MySQLConfig{
-			Enabled:     true,
-			Driver:      "sqlite",
-			DSN:         filepath.Join(tempRoot, "integration.db"),
-			PingTimeout: time.Second,
-			AutoMigrate: true,
-		},
-		AI: config.AIConfig{
-			HTTPBaseURL: "http://127.0.0.1:65535",
-			HTTPTimeout: 100 * time.Millisecond,
-			GRPCTarget:  "127.0.0.1:50051",
-			PingTimeout: time.Second,
-		},
-		Auth: config.AuthConfig{
-			JWTSecret:      "integration-secret",
-			TokenExpiresIn: 24 * time.Hour,
-		},
-	}, logger.New("ERROR"))
+	router := New(newIntegrationConfig(tempRoot, runtimeTarget), logger.New("ERROR"))
 
 	assertStatus(t, router, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong"}`, "", "application/json", http.StatusUnauthorized)
 
@@ -83,8 +67,14 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 
 	alertID := firstAlertID(t, router, token)
 	analyzeBody := request(t, router, http.MethodPost, "/api/v1/alerts/"+alertID+"/analyze", "", token, "application/json", http.StatusOK)
-	if !strings.Contains(analyzeBody, `"status":"failed"`) {
-		t.Fatalf("expected fallback analysis result, got %s", analyzeBody)
+	if !strings.Contains(analyzeBody, `"status":"ready"`) {
+		t.Fatalf("expected runtime-backed analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"workflow":"router_alert_analysis"`) {
+		t.Fatalf("expected runtime workflow in analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"source":"python-ai-runtime-router-alert-agent"`) {
+		t.Fatalf("expected runtime source in analysis result, got %s", analyzeBody)
 	}
 
 	toolBody := request(t, router, http.MethodPost, "/api/v1/tools/knowledge_search/call", `{"parameters":{"query":"user-service error ratio increased","limit":2}}`, token, "application/json", http.StatusOK)
@@ -102,30 +92,29 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 		t.Fatalf("expected audit logs to include auth and tool records, got %s", auditLogsBody)
 	}
 
-	restartedRouter := New(config.Config{
-		App: config.AppConfig{
-			Name:     "go-api",
-			Env:      "test",
-			LogLevel: "ERROR",
-		},
-		MySQL: config.MySQLConfig{
-			Enabled:     true,
-			Driver:      "sqlite",
-			DSN:         filepath.Join(tempRoot, "integration.db"),
-			PingTimeout: time.Second,
-			AutoMigrate: true,
-		},
-		AI: config.AIConfig{
-			HTTPBaseURL: "http://127.0.0.1:65535",
-			HTTPTimeout: 100 * time.Millisecond,
-			GRPCTarget:  "127.0.0.1:50051",
-			PingTimeout: time.Second,
-		},
-		Auth: config.AuthConfig{
-			JWTSecret:      "integration-secret",
-			TokenExpiresIn: 24 * time.Hour,
-		},
-	}, logger.New("ERROR"))
+	fallbackRouter := New(newIntegrationConfig(tempRoot, "127.0.0.1:65535"), logger.New("ERROR"))
+	fallbackToken := loginAndGetToken(t, fallbackRouter)
+	fallbackAnalyzeBody := request(
+		t,
+		fallbackRouter,
+		http.MethodPost,
+		"/api/v1/alerts/"+alertID+"/analyze",
+		"",
+		fallbackToken,
+		"application/json",
+		http.StatusOK,
+	)
+	if !strings.Contains(fallbackAnalyzeBody, `"status":"failed"`) {
+		t.Fatalf("expected degraded fallback analysis result, got %s", fallbackAnalyzeBody)
+	}
+	if !strings.Contains(fallbackAnalyzeBody, `"workflow":"go_fallback_rule_analysis"`) {
+		t.Fatalf("expected fallback workflow in analysis result, got %s", fallbackAnalyzeBody)
+	}
+	if !strings.Contains(fallbackAnalyzeBody, `"source":"go-fallback-analyzer"`) {
+		t.Fatalf("expected fallback source in analysis result, got %s", fallbackAnalyzeBody)
+	}
+
+	restartedRouter := New(newIntegrationConfig(tempRoot, runtimeTarget), logger.New("ERROR"))
 
 	restartedToken := loginAndGetToken(t, restartedRouter)
 	sessionsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/sessions", "", restartedToken, "", http.StatusOK)
@@ -147,6 +136,99 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	restartedAuditLogsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/audit/logs?limit=20", "", restartedToken, "", http.StatusOK)
 	if !strings.Contains(restartedAuditLogsBody, `"category":"tool"`) {
 		t.Fatalf("expected persisted audit logs after restart, got %s", restartedAuditLogsBody)
+	}
+}
+
+func newIntegrationConfig(tempRoot, grpcTarget string) config.Config {
+	return config.Config{
+		App: config.AppConfig{
+			Name:     "go-api",
+			Env:      "test",
+			LogLevel: "ERROR",
+		},
+		MySQL: config.MySQLConfig{
+			Enabled:     true,
+			Driver:      "sqlite",
+			DSN:         filepath.Join(tempRoot, "integration.db"),
+			PingTimeout: time.Second,
+			AutoMigrate: true,
+		},
+		AI: config.AIConfig{
+			HTTPBaseURL: "http://127.0.0.1:65535",
+			HTTPTimeout: 100 * time.Millisecond,
+			GRPCTarget:  grpcTarget,
+			PingTimeout: time.Second,
+		},
+		Auth: config.AuthConfig{
+			JWTSecret:      "integration-secret",
+			TokenExpiresIn: 24 * time.Hour,
+		},
+	}
+}
+
+type fakeRuntimeService struct {
+	aipb.UnimplementedRuntimeServiceServer
+}
+
+func (fakeRuntimeService) AnalyzeAlert(_ context.Context, request *aipb.AnalyzeAlertRequest) (*aipb.AnalyzeAlertResponse, error) {
+	return &aipb.AnalyzeAlertResponse{
+		Status:             "ready",
+		Summary:            "runtime analyzed " + request.GetService(),
+		SeverityAssessment: "runtime severity assessment for " + request.GetSeverity(),
+		PossibleCauses: []string{
+			"Recent release may have increased errors.",
+		},
+		SuggestedActions: []string{
+			"Check service_status and verify recent deploys.",
+		},
+		RecommendedTools: []string{"knowledge_search", "service_status"},
+		KnowledgeQueries: []string{request.GetService() + " " + request.GetTitle()},
+		Workflow:         "router_alert_analysis",
+		Confidence:       0.92,
+		Source:           "python-ai-runtime-router-alert-agent",
+		GeneratedAt:      "2026-04-09T10:00:00Z",
+	}, nil
+}
+
+func (fakeRuntimeService) RunConversationTurn(
+	_ context.Context,
+	request *aipb.RunConversationTurnRequest,
+) (*aipb.RunConversationTurnResponse, error) {
+	return &aipb.RunConversationTurnResponse{
+		Answer: "runtime answer for " + request.GetMessage(),
+		Route:  "chat_qa",
+		Status: "ready",
+	}, nil
+}
+
+func (fakeRuntimeService) Health(_ context.Context, _ *aipb.HealthRequest) (*aipb.HealthResponse, error) {
+	return &aipb.HealthResponse{
+		Status:  "ok",
+		Version: "test",
+		Service: "fake-runtime",
+	}, nil
+}
+
+func startRuntimeServer(t *testing.T) (string, func()) {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := grpc.NewServer()
+	aipb.RegisterRuntimeServiceServer(server, fakeRuntimeService{})
+
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil {
+			t.Logf("runtime test server stopped: %v", serveErr)
+		}
+	}()
+
+	return listener.Addr().String(), func() {
+		server.Stop()
+		_ = listener.Close()
 	}
 }
 
