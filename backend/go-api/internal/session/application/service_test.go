@@ -10,7 +10,7 @@ import (
 	sessionInfra "github.com/oyzg/OnCall/backend/go-api/internal/session/infrastructure"
 )
 
-func TestServiceRepositoryCreateAndReply(t *testing.T) {
+func TestSessionServiceRepositoryCreateAndReply(t *testing.T) {
 	gdb, err := db.Open(db.Config{
 		Driver: "sqlite",
 		DSN:    filepath.Join(t.TempDir(), "session-service.db"),

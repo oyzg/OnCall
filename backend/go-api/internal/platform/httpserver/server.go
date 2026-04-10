@@ -53,9 +53,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authService := authApp.NewService(cfg.Auth)
 	auditService := auditApp.NewService()
 	aiClient := gateway.NewHTTPClient(cfg.AI)
+	aiOrchestrator := eino.NewStubOrchestrator(aiClient)
 	sessionService := sessionApp.NewService()
 	knowledgeService := knowledgeApp.NewService()
-	alertAnalyzer := aiAnalyzer.NewService(eino.NewStubOrchestrator(aiClient))
+	alertAnalyzer := aiAnalyzer.NewService(aiOrchestrator)
 	alertService := alertApp.NewService(sessionService, alertAnalyzer)
 	var toolRepo toolApp.Repository
 	if cfg.MySQL.Enabled {
@@ -90,7 +91,7 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	retrievalService := retrievalApp.NewService(knowledgeService)
 	retrievalService.SetRemoteRetriever(aiClient)
 	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
-	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, auditService)
+	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, aiOrchestrator, auditService)
 	alertService.EnsureSeeded()
 	alertHandler := alertAPI.NewHandler(alertService, auditService)
 	var toolService *toolApp.Service

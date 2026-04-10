@@ -238,6 +238,9 @@ func TestChatMapsRuntimeRequestAndResponseFields(t *testing.T) {
 	if len(response.ToolCalls) != 1 || response.ToolCalls[0].Name != "service_status" {
 		t.Fatalf("unexpected tool calls: %#v", response.ToolCalls)
 	}
+	if len(response.CitationItems) != 3 || response.CitationItems[0].Title != "Cache invalidation runbook" {
+		t.Fatalf("unexpected citation items: %#v", response.CitationItems)
+	}
 	if len(response.Trace) != 1 || response.Trace[0].Stage != "router" {
 		t.Fatalf("unexpected trace: %#v", response.Trace)
 	}

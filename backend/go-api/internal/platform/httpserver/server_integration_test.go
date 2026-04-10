@@ -56,6 +56,20 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	if !strings.Contains(streamBody, "event: done") {
 		t.Fatalf("expected SSE done event, got %s", streamBody)
 	}
+	if !strings.Contains(streamBody, "runtime answer for 请帮我分析 user-service error ratio increased") {
+		t.Fatalf("expected runtime-backed chat answer, got %s", streamBody)
+	}
+	if !strings.Contains(streamBody, "User Service Runbook") {
+		t.Fatalf("expected runtime-backed references in SSE payload, got %s", streamBody)
+	}
+
+	messagesBody := request(t, router, http.MethodGet, "/api/v1/sessions/"+sessionID+"/messages", "", token, "", http.StatusOK)
+	if !strings.Contains(messagesBody, "runtime answer for 请帮我分析 user-service error ratio increased") {
+		t.Fatalf("expected persisted runtime-backed assistant message, got %s", messagesBody)
+	}
+	if !strings.Contains(messagesBody, "User Service Runbook") {
+		t.Fatalf("expected persisted runtime-backed references, got %s", messagesBody)
+	}
 
 	uploadKnowledgeDocument(t, router, token, "User Service SOP", "runbook", "user-service error ratio increased handling guide")
 	waitForKnowledgeReady(t, router, token)
@@ -196,6 +210,15 @@ func (fakeRuntimeService) RunConversationTurn(
 ) (*aipb.RunConversationTurnResponse, error) {
 	return &aipb.RunConversationTurnResponse{
 		Answer: "runtime answer for " + request.GetMessage(),
+		Citations: []*aipb.Citation{
+			{
+				Source:     "runbook",
+				Title:      "User Service Runbook",
+				Snippet:    "Check recent deploys and compare dependency error spikes before rollback.",
+				DocumentId: "doc-user-service-runbook",
+				Score:      0.93,
+			},
+		},
 		Route:  "chat_qa",
 		Status: "ready",
 	}, nil

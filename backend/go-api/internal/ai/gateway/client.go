@@ -29,13 +29,14 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	Answer    string       `json:"answer"`
-	Citations []string     `json:"citations"`
-	Route     string       `json:"route,omitempty"`
-	Status    string       `json:"status,omitempty"`
-	Error     string       `json:"error,omitempty"`
-	ToolCalls []ToolCall   `json:"tool_calls,omitempty"`
-	Trace     []TraceEvent `json:"trace,omitempty"`
+	Answer        string         `json:"answer"`
+	Citations     []string       `json:"citations"`
+	CitationItems []ChatCitation `json:"citation_items,omitempty"`
+	Route         string         `json:"route,omitempty"`
+	Status        string         `json:"status,omitempty"`
+	Error         string         `json:"error,omitempty"`
+	ToolCalls     []ToolCall     `json:"tool_calls,omitempty"`
+	Trace         []TraceEvent   `json:"trace,omitempty"`
 }
 
 type ChatMessage struct {
@@ -296,13 +297,14 @@ func (c *HTTPClient) Chat(ctx context.Context, request ChatRequest) (ChatRespons
 	}
 
 	return ChatResponse{
-		Answer:    response.GetAnswer(),
-		Citations: citations,
-		Route:     response.GetRoute(),
-		Status:    response.GetStatus(),
-		Error:     response.GetError(),
-		ToolCalls: chatToolCallsFromProto(response.GetToolCalls()),
-		Trace:     traceEventsFromProto(response.GetTrace()),
+		Answer:        response.GetAnswer(),
+		Citations:     citations,
+		CitationItems: chatCitationsFromProto(response.GetCitations()),
+		Route:         response.GetRoute(),
+		Status:        response.GetStatus(),
+		Error:         response.GetError(),
+		ToolCalls:     chatToolCallsFromProto(response.GetToolCalls()),
+		Trace:         traceEventsFromProto(response.GetTrace()),
 	}, nil
 }
 
@@ -547,6 +549,28 @@ func chatToolCallsFromProto(toolCalls []*aipb.ToolCall) []ToolCall {
 			ArgumentsJSON: item.GetArgumentsJson(),
 			Outcome:       item.GetOutcome(),
 			Summary:       item.GetSummary(),
+		})
+	}
+	return result
+}
+
+func chatCitationsFromProto(citations []*aipb.Citation) []ChatCitation {
+	if len(citations) == 0 {
+		return nil
+	}
+
+	result := make([]ChatCitation, 0, len(citations))
+	for _, item := range citations {
+		if item == nil {
+			continue
+		}
+		result = append(result, ChatCitation{
+			Source:     item.GetSource(),
+			Title:      item.GetTitle(),
+			URL:        item.GetUrl(),
+			Snippet:    item.GetSnippet(),
+			DocumentID: item.GetDocumentId(),
+			Score:      float64(item.GetScore()),
 		})
 	}
 	return result

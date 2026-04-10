@@ -10,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/eino"
+	"github.com/oyzg/OnCall/backend/go-api/internal/ai/gateway"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
 	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
@@ -22,9 +24,10 @@ import (
 )
 
 type Handler struct {
-	service   *sessionApp.Service
-	retrieval *retrieval.Service
-	audit     *auditApp.Service
+	service      *sessionApp.Service
+	retrieval    *retrieval.Service
+	orchestrator eino.Orchestrator
+	audit        *auditApp.Service
 }
 
 type createSessionRequest struct {
@@ -35,11 +38,17 @@ type streamMessageRequest struct {
 	Content string `json:"content"`
 }
 
-func NewHandler(service *sessionApp.Service, retrievalService *retrieval.Service, auditService *auditApp.Service) *Handler {
+func NewHandler(
+	service *sessionApp.Service,
+	retrievalService *retrieval.Service,
+	orchestrator eino.Orchestrator,
+	auditService *auditApp.Service,
+) *Handler {
 	return &Handler{
-		service:   service,
-		retrieval: retrievalService,
-		audit:     auditService,
+		service:      service,
+		retrieval:    retrievalService,
+		orchestrator: orchestrator,
+		audit:        auditService,
 	}
 }
 
@@ -140,6 +149,12 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		return
 	}
 
+	page, exists := h.service.ListMessages(user, c.Param("sessionID"), 8, "")
+	if !exists {
+		writeFailure(c, appErrors.ErrNotFound)
+		return
+	}
+
 	assistantMessage, exists := h.service.StartAssistantReply(user, c.Param("sessionID"), content)
 	if !exists {
 		writeFailure(c, appErrors.ErrNotFound)
@@ -149,8 +164,7 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		"content_length": len([]rune(content)),
 	})
 
-	references := h.retrieval.Retrieve(user, content, 3)
-	replyContent := retrieval.BuildAnswer(content, references)
+	replyContent, sessionReferences := h.runtimeReply(c, user, c.Param("sessionID"), content, page.Messages)
 	replyChunks := splitReplyChunks(replyContent, 18)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -170,7 +184,6 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		time.Sleep(60 * time.Millisecond)
 	}
 
-	sessionReferences := toSessionReferences(references)
 	h.service.CompleteAssistantReply(
 		user,
 		c.Param("sessionID"),
@@ -185,6 +198,38 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		"references": sessionReferences,
 	})
 	c.Writer.Flush()
+}
+
+func (h *Handler) runtimeReply(
+	c *gin.Context,
+	user authDomain.User,
+	sessionID string,
+	content string,
+	history []sessionDomain.Message,
+) (string, []sessionDomain.Reference) {
+	if h.orchestrator == nil {
+		return h.localReply(user, content)
+	}
+
+	response, err := h.orchestrator.HandleChat(c.Request.Context(), gateway.ChatRequest{
+		Query:          content,
+		ConversationID: sessionID,
+		UserID:         user.ID,
+		UserRoles:      append([]string(nil), user.Roles...),
+		History:        toGatewayHistory(history),
+		AllowedTools:   []string{"knowledge_search", "service_status"},
+		RetrievalLimit: 3,
+	})
+	if err != nil || strings.TrimSpace(response.Answer) == "" {
+		return h.localReply(user, content)
+	}
+
+	return response.Answer, toSessionReferencesFromCitations(response.CitationItems)
+}
+
+func (h *Handler) localReply(user authDomain.User, content string) (string, []sessionDomain.Reference) {
+	references := h.retrieval.Retrieve(user, content, 3)
+	return retrieval.BuildAnswer(content, references), toSessionReferences(references)
 }
 
 func writeSSE(c *gin.Context, event string, payload any) {
@@ -231,6 +276,47 @@ func toSessionReferences(references []retrieval.Reference) []sessionDomain.Refer
 			Category:      reference.Category,
 			Excerpt:       reference.Chunk,
 			Score:         reference.Score,
+		})
+	}
+	return items
+}
+
+func toSessionReferencesFromCitations(citations []gateway.ChatCitation) []sessionDomain.Reference {
+	items := make([]sessionDomain.Reference, 0, len(citations))
+	for _, citation := range citations {
+		items = append(items, sessionDomain.Reference{
+			DocumentID:    citation.DocumentID,
+			DocumentTitle: citation.Title,
+			Category:      citation.Source,
+			Excerpt:       citation.Snippet,
+			Score:         citation.Score,
+		})
+	}
+	return items
+}
+
+func toGatewayHistory(messages []sessionDomain.Message) []gateway.ChatMessage {
+	items := make([]gateway.ChatMessage, 0, len(messages))
+	for _, message := range messages {
+		items = append(items, gateway.ChatMessage{
+			Role:      message.Role,
+			Content:   message.Content,
+			CreatedAt: message.CreatedAt.Format(time.RFC3339),
+			Citations: toGatewayCitations(message.References),
+		})
+	}
+	return items
+}
+
+func toGatewayCitations(references []sessionDomain.Reference) []gateway.ChatCitation {
+	items := make([]gateway.ChatCitation, 0, len(references))
+	for _, reference := range references {
+		items = append(items, gateway.ChatCitation{
+			Source:     reference.Category,
+			Title:      reference.DocumentTitle,
+			Snippet:    reference.Excerpt,
+			DocumentID: reference.DocumentID,
+			Score:      reference.Score,
 		})
 	}
 	return items
