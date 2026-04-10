@@ -47,8 +47,26 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   status: "streaming" | "completed" | "failed";
+  route?: string;
+  tool_calls?: ChatToolCall[];
+  trace?: ChatTraceEvent[];
   references?: MessageReference[];
   created_at: string;
+}
+
+export interface ChatToolCall {
+  name: string;
+  arguments_json?: string;
+  outcome?: string;
+  summary?: string;
+}
+
+export interface ChatTraceEvent {
+  stage: string;
+  message: string;
+  severity?: string;
+  timestamp?: string;
+  tags?: string[];
 }
 
 export interface ChatMessagePage {
@@ -300,6 +318,9 @@ export async function streamSessionMessage(
     onDone?: (payload: {
       message_id: string;
       content: string;
+      route?: string;
+      tool_calls?: ChatToolCall[];
+      trace?: ChatTraceEvent[];
       references?: MessageReference[];
     }) => void;
   }
@@ -360,6 +381,9 @@ function parseSSEEvent(
     onDone?: (payload: {
       message_id: string;
       content: string;
+      route?: string;
+      tool_calls?: ChatToolCall[];
+      trace?: ChatTraceEvent[];
       references?: MessageReference[];
     }) => void;
   }

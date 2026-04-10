@@ -11,6 +11,8 @@ class AppSettings(BaseSettings):
     http_port: int = Field(default=8000, alias="HTTP_PORT")
     grpc_host: str = Field(default="0.0.0.0", alias="GRPC_HOST")
     grpc_port: int = Field(default=50051, alias="GRPC_PORT")
+    go_api_base_url: str = Field(default="http://127.0.0.1:8080", alias="GO_API_BASE_URL")
+    runtime_shared_secret: str = Field(default="oncall-runtime-secret", alias="RUNTIME_SHARED_SECRET")
     openai_base_url: str = Field(default="https://api.openai.com/v1", alias="OPENAI_BASE_URL")
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     runtime_api_model: str = Field(default="gpt-4.1-mini", alias="RUNTIME_API_MODEL")

@@ -100,7 +100,7 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	} else {
 		toolService = toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
 	}
-	toolHandler := toolAPI.NewHandler(toolService, auditService)
+	toolHandler := toolAPI.NewHandler(toolService, auditService, cfg.AI.RuntimeSharedSecret)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -126,6 +126,9 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 			"detail":  err.Error(),
 		})
 	})
+
+	internalToolGroup := router.Group("/internal/ai/tools")
+	internalToolGroup.POST("/:toolName/call", toolHandler.CallToolInternal)
 
 	authGroup := router.Group("/api/v1/auth")
 	authGroup.POST("/login", authHandler.Login)

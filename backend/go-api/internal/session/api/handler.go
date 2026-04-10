@@ -38,6 +38,14 @@ type streamMessageRequest struct {
 	Content string `json:"content"`
 }
 
+type runtimeReplyResult struct {
+	Content    string
+	References []sessionDomain.Reference
+	Route      string
+	ToolCalls  []sessionDomain.ToolCall
+	Trace      []sessionDomain.TraceEvent
+}
+
 func NewHandler(
 	service *sessionApp.Service,
 	retrievalService *retrieval.Service,
@@ -164,8 +172,8 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		"content_length": len([]rune(content)),
 	})
 
-	replyContent, sessionReferences := h.runtimeReply(c, user, c.Param("sessionID"), content, page.Messages)
-	replyChunks := splitReplyChunks(replyContent, 18)
+	runtimeResult := h.runtimeReply(c, user, c.Param("sessionID"), content, page.Messages)
+	replyChunks := splitReplyChunks(runtimeResult.Content, 18)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
@@ -189,13 +197,19 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		c.Param("sessionID"),
 		assistantMessage.ID,
 		fullReply.String(),
-		sessionReferences,
+		runtimeResult.References,
+		runtimeResult.Route,
+		runtimeResult.ToolCalls,
+		runtimeResult.Trace,
 	)
 
 	writeSSE(c, "done", gin.H{
 		"message_id": assistantMessage.ID,
 		"content":    fullReply.String(),
-		"references": sessionReferences,
+		"references": runtimeResult.References,
+		"route":      runtimeResult.Route,
+		"tool_calls": runtimeResult.ToolCalls,
+		"trace":      runtimeResult.Trace,
 	})
 	c.Writer.Flush()
 }
@@ -206,7 +220,7 @@ func (h *Handler) runtimeReply(
 	sessionID string,
 	content string,
 	history []sessionDomain.Message,
-) (string, []sessionDomain.Reference) {
+) runtimeReplyResult {
 	if h.orchestrator == nil {
 		return h.localReply(user, content)
 	}
@@ -224,12 +238,29 @@ func (h *Handler) runtimeReply(
 		return h.localReply(user, content)
 	}
 
-	return response.Answer, toSessionReferencesFromCitations(response.CitationItems)
+	return runtimeReplyResult{
+		Content:    response.Answer,
+		References: toSessionReferencesFromCitations(response.CitationItems),
+		Route:      strings.TrimSpace(response.Route),
+		ToolCalls:  toSessionToolCalls(response.ToolCalls),
+		Trace:      toSessionTrace(response.Trace),
+	}
 }
 
-func (h *Handler) localReply(user authDomain.User, content string) (string, []sessionDomain.Reference) {
+func (h *Handler) localReply(user authDomain.User, content string) runtimeReplyResult {
 	references := h.retrieval.Retrieve(user, content, 3)
-	return retrieval.BuildAnswer(content, references), toSessionReferences(references)
+	return runtimeReplyResult{
+		Content:    retrieval.BuildAnswer(content, references),
+		References: toSessionReferences(references),
+		Route:      "local_retrieval",
+		Trace: []sessionDomain.TraceEvent{
+			{
+				Stage:    "local_reply",
+				Message:  "answered with local retrieval fallback",
+				Severity: "warning",
+			},
+		},
+	}
 }
 
 func writeSSE(c *gin.Context, event string, payload any) {
@@ -290,6 +321,33 @@ func toSessionReferencesFromCitations(citations []gateway.ChatCitation) []sessio
 			Category:      citation.Source,
 			Excerpt:       citation.Snippet,
 			Score:         citation.Score,
+		})
+	}
+	return items
+}
+
+func toSessionToolCalls(calls []gateway.ToolCall) []sessionDomain.ToolCall {
+	items := make([]sessionDomain.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		items = append(items, sessionDomain.ToolCall{
+			Name:          call.Name,
+			ArgumentsJSON: call.ArgumentsJSON,
+			Outcome:       call.Outcome,
+			Summary:       call.Summary,
+		})
+	}
+	return items
+}
+
+func toSessionTrace(trace []gateway.TraceEvent) []sessionDomain.TraceEvent {
+	items := make([]sessionDomain.TraceEvent, 0, len(trace))
+	for _, entry := range trace {
+		items = append(items, sessionDomain.TraceEvent{
+			Stage:     entry.Stage,
+			Message:   entry.Message,
+			Severity:  entry.Severity,
+			Timestamp: entry.Timestamp,
+			Tags:      append([]string(nil), entry.Tags...),
 		})
 	}
 	return items

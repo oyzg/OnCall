@@ -49,6 +49,45 @@
             <span>{{ formatTime(message.created_at) }}</span>
           </header>
           <p>{{ message.content || (message.status === 'streaming' ? '正在生成回复...' : '') }}</p>
+          <div v-if="message.role === 'assistant' && hasMessageDiagnostics(message)" class="message-diagnostics">
+            <div class="message-meta">
+              <span v-if="message.route" class="route-chip">Route: {{ message.route }}</span>
+              <span v-if="message.tool_calls?.length" class="meta-count">Tools: {{ message.tool_calls.length }}</span>
+              <span v-if="message.trace?.length" class="meta-count">Trace: {{ message.trace.length }}</span>
+            </div>
+
+            <div v-if="message.tool_calls?.length" class="tool-call-list">
+              <div
+                v-for="toolCall in message.tool_calls"
+                :key="`${message.id}-${toolCall.name}-${toolCall.arguments_json}`"
+                class="tool-call-card"
+              >
+                <header>
+                  <strong>{{ toolCall.name }}</strong>
+                  <span>{{ toolCall.outcome || "unknown" }}</span>
+                </header>
+                <p v-if="toolCall.summary">{{ toolCall.summary }}</p>
+                <pre v-if="toolCall.arguments_json">{{ toolCall.arguments_json }}</pre>
+              </div>
+            </div>
+
+            <div v-if="message.trace?.length" class="trace-list">
+              <div
+                v-for="(trace, index) in message.trace"
+                :key="`${message.id}-${trace.stage}-${index}`"
+                class="trace-item"
+              >
+                <div class="trace-stage">
+                  <strong>{{ trace.stage }}</strong>
+                  <span>{{ trace.severity || "info" }}</span>
+                </div>
+                <p>{{ trace.message }}</p>
+                <small v-if="trace.timestamp || trace.tags?.length">
+                  {{ [trace.timestamp ? formatTraceTime(trace.timestamp) : "", trace.tags?.length ? trace.tags.join(" · ") : ""].filter(Boolean).join(" · ") }}
+                </small>
+              </div>
+            </div>
+          </div>
           <div v-if="message.references?.length" class="reference-list">
             <strong>引用片段</strong>
             <div
@@ -240,7 +279,7 @@ async function handleSend() {
         target.status = "streaming";
         await scrollToBottom();
       },
-      onDone: ({ message_id, content: finalContent, references }) => {
+      onDone: ({ message_id, content: finalContent, references, route, tool_calls, trace }) => {
         const target = messages.value.find((item) => item.id === assistantMessage.id || item.id === message_id);
         if (!target) {
           return;
@@ -249,6 +288,9 @@ async function handleSend() {
         target.id = message_id;
         target.content = finalContent;
         target.status = "completed";
+        target.route = route || "";
+        target.tool_calls = tool_calls || [];
+        target.trace = trace || [];
         target.references = references || [];
       },
     });
@@ -268,6 +310,10 @@ function handleDraftInput(event: Event) {
   draft.value = (event.target as HTMLTextAreaElement).value;
 }
 
+function hasMessageDiagnostics(message: ChatMessage) {
+  return Boolean(message.route || message.tool_calls?.length || message.trace?.length);
+}
+
 function formatTime(value: string) {
   return new Date(value).toLocaleString("zh-CN", {
     hour12: false,
@@ -275,6 +321,21 @@ function formatTime(value: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function formatTraceTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 
@@ -455,6 +516,76 @@ async function focusComposer() {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px dashed rgba(148, 163, 184, 0.45);
+}
+
+.message-diagnostics {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.45);
+  display: grid;
+  gap: 12px;
+}
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.route-chip,
+.meta-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+  font-size: 12px;
+}
+
+.tool-call-list,
+.trace-list {
+  display: grid;
+  gap: 10px;
+}
+
+.tool-call-card,
+.trace-item {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.tool-call-card header,
+.trace-stage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool-call-card p,
+.trace-item p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #334155;
+}
+
+.tool-call-card pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.trace-item small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
 }
 
 .reference-list > strong {

@@ -16,16 +16,23 @@ import (
 )
 
 type Handler struct {
-	service *toolApp.Service
-	audit   *auditApp.Service
+	service             *toolApp.Service
+	audit               *auditApp.Service
+	runtimeSharedSecret string
 }
 
 type callToolRequest struct {
 	Parameters map[string]any `json:"parameters"`
 }
 
-func NewHandler(service *toolApp.Service, auditService *auditApp.Service) *Handler {
-	return &Handler{service: service, audit: auditService}
+type internalCallToolRequest struct {
+	UserID     string         `json:"user_id"`
+	UserRoles  []string       `json:"user_roles"`
+	Parameters map[string]any `json:"parameters"`
+}
+
+func NewHandler(service *toolApp.Service, auditService *auditApp.Service, runtimeSharedSecret string) *Handler {
+	return &Handler{service: service, audit: auditService, runtimeSharedSecret: runtimeSharedSecret}
 }
 
 func (h *Handler) ListTools(c *gin.Context) {
@@ -90,6 +97,46 @@ func (h *Handler) ListLogs(c *gin.Context) {
 			strings.TrimSpace(c.Query("status")),
 			limit,
 		),
+	})
+}
+
+func (h *Handler) CallToolInternal(c *gin.Context) {
+	if strings.TrimSpace(c.GetHeader("X-OnCall-Runtime-Secret")) != h.runtimeSharedSecret {
+		response.Failure(c.Writer, http.StatusForbidden, requestID(c), "FORBIDDEN", "invalid runtime secret")
+		return
+	}
+
+	var req internalCallToolRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeFailure(c, appErrors.ErrBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		writeFailure(c, appErrors.ErrBadRequest)
+		return
+	}
+
+	user := authDomain.User{
+		ID:          strings.TrimSpace(req.UserID),
+		Username:    strings.TrimSpace(req.UserID),
+		DisplayName: strings.TrimSpace(req.UserID),
+		Roles:       append([]string(nil), req.UserRoles...),
+	}
+	result, err := h.service.CallTool(user, c.Param("toolName"), req.Parameters)
+	if err != nil {
+		if appErr, ok := err.(appErrors.AppError); ok {
+			response.Failure(c.Writer, appErr.HTTPStatus, requestID(c), appErr.Code, appErr.Message)
+			return
+		}
+		response.Failure(c.Writer, http.StatusBadRequest, requestID(c), "TOOL_EXECUTION_FAILED", err.Error())
+		return
+	}
+	h.record(user, c.Param("toolName"), "success", "runtime tool call succeeded.", map[string]any{
+		"parameters": req.Parameters,
+		"source":     "python-ai-runtime",
+	})
+	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
+		"result": result,
 	})
 }
 

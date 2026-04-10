@@ -1,15 +1,16 @@
 import { createRouter, createWebHistory } from "vue-router";
 
-import AppShell from "@/layouts/AppShell.vue";
-import AlertsPage from "@/pages/AlertsPage.vue";
-import AuditPage from "@/pages/AuditPage.vue";
-import ChatPage from "@/pages/ChatPage.vue";
-import DashboardPage from "@/pages/DashboardPage.vue";
-import KnowledgePage from "@/pages/KnowledgePage.vue";
-import LoginPage from "@/pages/LoginPage.vue";
-import SettingsPage from "@/pages/SettingsPage.vue";
-import ToolsPage from "@/pages/ToolsPage.vue";
 import { useAuthStore } from "@/stores/auth";
+
+const AppShell = () => import("@/layouts/AppShell.vue");
+const LoginPage = () => import("@/pages/LoginPage.vue");
+const DashboardPage = () => import("@/pages/DashboardPage.vue");
+const ChatPage = () => import("@/pages/ChatPage.vue");
+const AlertsPage = () => import("@/pages/AlertsPage.vue");
+const KnowledgePage = () => import("@/pages/KnowledgePage.vue");
+const ToolsPage = () => import("@/pages/ToolsPage.vue");
+const AuditPage = () => import("@/pages/AuditPage.vue");
+const SettingsPage = () => import("@/pages/SettingsPage.vue");
 
 const router = createRouter({
   history: createWebHistory(),

@@ -62,6 +62,12 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	if !strings.Contains(streamBody, "User Service Runbook") {
 		t.Fatalf("expected runtime-backed references in SSE payload, got %s", streamBody)
 	}
+	if !strings.Contains(streamBody, `"route":"chat_qa"`) {
+		t.Fatalf("expected route metadata in SSE payload, got %s", streamBody)
+	}
+	if !strings.Contains(streamBody, `"trace"`) {
+		t.Fatalf("expected trace metadata in SSE payload, got %s", streamBody)
+	}
 
 	messagesBody := request(t, router, http.MethodGet, "/api/v1/sessions/"+sessionID+"/messages", "", token, "", http.StatusOK)
 	if !strings.Contains(messagesBody, "runtime answer for 请帮我分析 user-service error ratio increased") {
@@ -69,6 +75,29 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	}
 	if !strings.Contains(messagesBody, "User Service Runbook") {
 		t.Fatalf("expected persisted runtime-backed references, got %s", messagesBody)
+	}
+	if !strings.Contains(messagesBody, `"route":"chat_qa"`) {
+		t.Fatalf("expected persisted route metadata, got %s", messagesBody)
+	}
+	if !strings.Contains(messagesBody, `"trace"`) {
+		t.Fatalf("expected persisted trace metadata, got %s", messagesBody)
+	}
+
+	toolSessionID := createSession(t, router, token, "tool integration session")
+	toolStreamBody := request(t, router, http.MethodPost, "/api/v1/sessions/"+toolSessionID+"/messages/stream", `{"content":"Please run a tool to check user-service status"}`, token, "application/json", http.StatusOK)
+	if !strings.Contains(toolStreamBody, `"route":"tool"`) {
+		t.Fatalf("expected tool route in SSE payload, got %s", toolStreamBody)
+	}
+	if !strings.Contains(toolStreamBody, `"tool_calls"`) || !strings.Contains(toolStreamBody, `"service_status"`) {
+		t.Fatalf("expected tool call metadata in SSE payload, got %s", toolStreamBody)
+	}
+
+	toolMessagesBody := request(t, router, http.MethodGet, "/api/v1/sessions/"+toolSessionID+"/messages", "", token, "", http.StatusOK)
+	if !strings.Contains(toolMessagesBody, `"route":"tool"`) {
+		t.Fatalf("expected persisted tool route metadata, got %s", toolMessagesBody)
+	}
+	if !strings.Contains(toolMessagesBody, `"tool_calls"`) || !strings.Contains(toolMessagesBody, `"service_status"`) {
+		t.Fatalf("expected persisted tool call metadata, got %s", toolMessagesBody)
 	}
 
 	uploadKnowledgeDocument(t, router, token, "User Service SOP", "runbook", "user-service error ratio increased handling guide")
@@ -94,6 +123,22 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	toolBody := request(t, router, http.MethodPost, "/api/v1/tools/knowledge_search/call", `{"parameters":{"query":"user-service error ratio increased","limit":2}}`, token, "application/json", http.StatusOK)
 	if !strings.Contains(toolBody, `"answer"`) {
 		t.Fatalf("expected tool result with answer, got %s", toolBody)
+	}
+
+	internalToolBody := requestWithHeaders(
+		t,
+		router,
+		http.MethodPost,
+		"/internal/ai/tools/service_status/call",
+		`{"user_id":"user-admin","user_roles":["admin"],"parameters":{"service":"user-service","environment":"prod"}}`,
+		map[string]string{
+			"Content-Type":            "application/json",
+			"X-OnCall-Runtime-Secret": "integration-runtime-secret",
+		},
+		http.StatusOK,
+	)
+	if !strings.Contains(internalToolBody, `"service":"user-service"`) {
+		t.Fatalf("expected internal tool execution result, got %s", internalToolBody)
 	}
 
 	auditStatsBody := request(t, router, http.MethodGet, "/api/v1/audit/stats", "", token, "", http.StatusOK)
@@ -168,10 +213,11 @@ func newIntegrationConfig(tempRoot, grpcTarget string) config.Config {
 			AutoMigrate: true,
 		},
 		AI: config.AIConfig{
-			HTTPBaseURL: "http://127.0.0.1:65535",
-			HTTPTimeout: 100 * time.Millisecond,
-			GRPCTarget:  grpcTarget,
-			PingTimeout: time.Second,
+			HTTPBaseURL:         "http://127.0.0.1:65535",
+			HTTPTimeout:         100 * time.Millisecond,
+			GRPCTarget:          grpcTarget,
+			PingTimeout:         time.Second,
+			RuntimeSharedSecret: "integration-runtime-secret",
 		},
 		Auth: config.AuthConfig{
 			JWTSecret:      "integration-secret",
@@ -208,6 +254,26 @@ func (fakeRuntimeService) RunConversationTurn(
 	_ context.Context,
 	request *aipb.RunConversationTurnRequest,
 ) (*aipb.RunConversationTurnResponse, error) {
+	if strings.Contains(strings.ToLower(request.GetMessage()), "tool") {
+		return &aipb.RunConversationTurnResponse{
+			Answer: "tool result for " + request.GetMessage(),
+			ToolCalls: []*aipb.ToolCall{
+				{
+					Name:          "service_status",
+					ArgumentsJson: `{"service":"user-service"}`,
+					Outcome:       "success",
+					Summary:       "user-service is degraded in prod",
+				},
+			},
+			Route:  "tool",
+			Status: "ready",
+			Trace: []*aipb.TraceEvent{
+				{Stage: "router", Message: "tool route selected", Severity: "info"},
+				{Stage: "tool", Message: "executed service_status", Severity: "info"},
+			},
+		}, nil
+	}
+
 	return &aipb.RunConversationTurnResponse{
 		Answer: "runtime answer for " + request.GetMessage(),
 		Citations: []*aipb.Citation{
@@ -221,6 +287,10 @@ func (fakeRuntimeService) RunConversationTurn(
 		},
 		Route:  "chat_qa",
 		Status: "ready",
+		Trace: []*aipb.TraceEvent{
+			{Stage: "router", Message: "chat route selected", Severity: "info"},
+			{Stage: "chat_qa", Message: "answered with knowledge citations", Severity: "info"},
+		},
 	}, nil
 }
 
@@ -373,6 +443,33 @@ func request(t *testing.T, router *gin.Engine, method, path, body, token, conten
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
+	if recorder.Code != expectedStatus {
+		t.Fatalf("%s %s expected %d got %d: %s", method, path, expectedStatus, recorder.Code, recorder.Body.String())
+	}
+	return recorder.Body.String()
+}
+
+func requestWithHeaders(
+	t *testing.T,
+	router *gin.Engine,
+	method, path, body string,
+	headers map[string]string,
+	expectedStatus int,
+) string {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+
+	req := httptest.NewRequest(method, path, reader)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
 	if recorder.Code != expectedStatus {
 		t.Fatalf("%s %s expected %d got %d: %s", method, path, expectedStatus, recorder.Code, recorder.Body.String())
 	}

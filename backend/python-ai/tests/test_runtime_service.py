@@ -43,6 +43,19 @@ class EmptyRAGService:
         return []
 
 
+class FakeToolGateway:
+    def execute_tool(self, *, user_id: str, user_roles: list[str], tool_name: str, parameters: dict[str, object]):
+        del user_id, user_roles
+        return {
+            "status": "success",
+            "result": {
+                "tool_name": tool_name,
+                **parameters,
+                "risk": "degraded",
+            },
+        }
+
+
 class RuntimeServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self.settings = AppSettings(
@@ -71,19 +84,20 @@ class RuntimeServiceTest(unittest.TestCase):
         )
         fake_llm = FakeLLMClient()
         empty_rag = EmptyRAGService()
+        fake_tool_gateway = FakeToolGateway()
         self.service = RuntimeService(
             router_agent=RouterAgent(),
             alert_analysis_agent=AlertAnalysisAgent(
                 llm_client=fake_llm,
-                tool_agent=ToolAgent(llm_client=fake_llm),
+                tool_agent=ToolAgent(llm_client=fake_llm, tool_gateway=fake_tool_gateway),
                 rag_service=empty_rag,
             ),
             chat_qa_agent=ChatQAAgent(
                 llm_client=fake_llm,
-                tool_agent=ToolAgent(llm_client=fake_llm),
+                tool_agent=ToolAgent(llm_client=fake_llm, tool_gateway=fake_tool_gateway),
                 rag_service=empty_rag,
             ),
-            tool_agent=ToolAgent(llm_client=fake_llm),
+            tool_agent=ToolAgent(llm_client=fake_llm, tool_gateway=fake_tool_gateway),
             llm_client=fake_llm,
             settings=self.settings,
         )
@@ -192,7 +206,7 @@ class RuntimeServiceTest(unittest.TestCase):
                 session_id="session-4",
                 user_id="user-1",
                 user_roles=["oncall"],
-                message="Please check the service with a tool",
+                message="Please check payment-api with a tool",
                 history=[],
                 allowed_tools=["service_status"],
                 retrieval_limit=3,
@@ -203,6 +217,9 @@ class RuntimeServiceTest(unittest.TestCase):
         self.assertEqual("ready", response.status)
         self.assertEqual("tool", response.route)
         self.assertTrue(response.tool_calls)
+        self.assertEqual("service_status", response.tool_calls[0].name)
+        self.assertEqual("success", response.tool_calls[0].outcome)
+        self.assertIn("service", response.tool_calls[0].arguments_json)
         self.assertEqual("tool", response.trace[-1].stage)
 
     @patch("app.grpc.server.grpc.server")
