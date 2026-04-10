@@ -36,6 +36,8 @@ def root(
             "message": "AI OnCall Python AI base server is ready",
             "service": settings.app_name,
             "env": settings.app_env,
+            "runtime_model": settings.runtime_api_model,
+            "grpc_endpoint": f"{settings.grpc_host}:{settings.grpc_port}",
             "chain_registry": chains.name,
             "graph_registry": graphs.name,
         }

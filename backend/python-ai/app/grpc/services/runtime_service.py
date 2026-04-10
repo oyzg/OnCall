@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.core.config import AppSettings, get_settings
 from app.agents.alert_analysis_agent import AlertAnalysisAgent
 from app.agents.chat_qa_agent import ChatQAAgent
 from app.agents.router_agent import RouterAgent
@@ -7,6 +8,7 @@ from app.agents.tool_agent import ToolAgent
 from app.grpc.mappers import (
     ConversationTurnResult,
     HealthResult,
+    TraceEntry,
     alert_result_to_proto,
     conversation_request_to_alert_request,
     conversation_result_to_proto,
@@ -16,6 +18,7 @@ from app.graphs.alert_analysis_graph import build_alert_analysis_graph
 from app.graphs.chat_qa_graph import build_chat_qa_graph
 from app.graphs.router_graph import build_router_graph
 from app.llm.openai_compatible import OpenAICompatibleClient, build_openai_compatible_client
+from app.services.health import build_health_report
 
 from app.gen.proto.ai import runtime_pb2, runtime_pb2_grpc
 
@@ -29,7 +32,9 @@ class RuntimeService(runtime_pb2_grpc.RuntimeServiceServicer):
         chat_qa_agent: ChatQAAgent | None = None,
         tool_agent: ToolAgent | None = None,
         llm_client: OpenAICompatibleClient | None = None,
+        settings: AppSettings | None = None,
     ) -> None:
+        self.settings = settings or get_settings()
         self.llm_client = llm_client or build_openai_compatible_client()
         self.router_agent = router_agent or RouterAgent()
         self.alert_analysis_agent = alert_analysis_agent or AlertAnalysisAgent(llm_client=self.llm_client)
@@ -77,10 +82,19 @@ class RuntimeService(runtime_pb2_grpc.RuntimeServiceServicer):
         return conversation_result_to_proto(chat_result)
 
     def Health(self, request: runtime_pb2.HealthRequest, context=None) -> runtime_pb2.HealthResponse:
+        report = build_health_report(self.settings)
         result = HealthResult(
-            status="ok",
-            service="python-ai",
+            status=report.status,
+            service=report.service,
             version="0.1.0",
-            trace=[],
+            trace=[
+                TraceEntry(
+                    stage=component.name,
+                    message=component.detail or component.status,
+                    severity="warning" if component.status in {"down", "fallback"} else "info",
+                    tags=[component.status],
+                )
+                for component in report.components
+            ],
         )
         return health_result_to_proto(result)

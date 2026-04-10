@@ -5,6 +5,11 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from app.agents.alert_analysis_agent import AlertAnalysisAgent
+from app.agents.chat_qa_agent import ChatQAAgent
+from app.agents.router_agent import RouterAgent
+from app.agents.tool_agent import ToolAgent
+from app.core.config import AppSettings
 from app.grpc.mappers import bootstrap_proto_modules
 
 bootstrap_proto_modules()
@@ -16,9 +21,72 @@ from app.grpc.server import create_server
 from app.main import app as fastapi_app
 
 
+class FakeLLMClient:
+    def complete(self, prompt: str) -> str:
+        return f"complete:{prompt}"
+
+    def chat(self, messages) -> str:
+        return "chat:" + messages[-1]["content"]
+
+    def complete_structured(self, *, prompt: str, fallback: dict[str, object]) -> dict[str, object]:
+        del prompt
+        return dict(fallback)
+
+
+class EmptyRAGService:
+    def retrieve(self, request):
+        del request
+        return None
+
+    def retrieve_alert_context(self, queries, *, limit=2):
+        del queries, limit
+        return []
+
+
 class RuntimeServiceTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.service = RuntimeService()
+        self.settings = AppSettings(
+            APP_NAME="python-ai",
+            APP_ENV="test",
+            LOG_LEVEL="INFO",
+            HTTP_PORT=8000,
+            GRPC_HOST="127.0.0.1",
+            GRPC_PORT=50051,
+            OPENAI_BASE_URL="https://api.openai.com/v1",
+            OPENAI_API_KEY="test-key",
+            RUNTIME_API_MODEL="gpt-4.1-mini",
+            RUNTIME_API_TIMEOUT_SECONDS=30,
+            EMBEDDING_PROVIDER="openai_compatible",
+            EMBEDDING_API_MODEL="text-embedding-3-small",
+            EMBEDDING_API_TIMEOUT_SECONDS=15,
+            ELASTICSEARCH_URL="http://127.0.0.1:9200",
+            MILVUS_ADDRESS="127.0.0.1:19530",
+            RAG_ES_INDEX="oncall_knowledge_chunks",
+            RAG_MILVUS_COLLECTION="oncall_knowledge_chunks",
+            EMBEDDING_MODEL_PATH="",
+            EMBEDDING_MODEL_NAME="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            EMBEDDING_LOCAL_ONLY=True,
+            EMBEDDING_DIMENSION=1536,
+            RAG_FUSION_WINDOW=60,
+        )
+        fake_llm = FakeLLMClient()
+        empty_rag = EmptyRAGService()
+        self.service = RuntimeService(
+            router_agent=RouterAgent(),
+            alert_analysis_agent=AlertAnalysisAgent(
+                llm_client=fake_llm,
+                tool_agent=ToolAgent(llm_client=fake_llm),
+                rag_service=empty_rag,
+            ),
+            chat_qa_agent=ChatQAAgent(
+                llm_client=fake_llm,
+                tool_agent=ToolAgent(llm_client=fake_llm),
+                rag_service=empty_rag,
+            ),
+            tool_agent=ToolAgent(llm_client=fake_llm),
+            llm_client=fake_llm,
+            settings=self.settings,
+        )
 
     def test_analyze_alert_returns_router_backed_proto_response(self) -> None:
         response = self.service.AnalyzeAlert(
@@ -161,6 +229,29 @@ class RuntimeServiceTest(unittest.TestCase):
             fake_server.start.assert_called_once()
 
         fake_server.stop.assert_called_once_with(grace=0)
+
+    @patch("app.grpc.services.runtime_service.build_health_report")
+    def test_health_reports_runtime_components_as_trace(self, build_health_report_mock: MagicMock) -> None:
+        build_health_report_mock.return_value = type(
+            "HealthReportStub",
+            (),
+            {
+                "service": "python-ai",
+                "status": "degraded",
+                "components": [
+                    type("ComponentStub", (), {"name": "grpc_runtime", "status": "up", "detail": "127.0.0.1:50051"})(),
+                    type("ComponentStub", (), {"name": "runtime_model", "status": "fallback", "detail": "stub fallback"})(),
+                ],
+            },
+        )()
+
+        response = self.service.Health(runtime_pb2.HealthRequest(metadata=metadata_pb2.RequestMetadata()), context=None)
+
+        self.assertEqual("degraded", response.status)
+        self.assertEqual("python-ai", response.service)
+        self.assertTrue(response.trace)
+        self.assertEqual("grpc_runtime", response.trace[0].stage)
+        self.assertEqual("runtime_model", response.trace[1].stage)
 
 
 if __name__ == "__main__":

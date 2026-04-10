@@ -18,7 +18,7 @@ def create_server(
 ) -> grpc.Server:
     current = settings or get_settings()
     server = grpc.server(ThreadPoolExecutor(max_workers=4))
-    runtime_pb2_grpc.add_RuntimeServiceServicer_to_server(service or RuntimeService(), server)
+    runtime_pb2_grpc.add_RuntimeServiceServicer_to_server(service or RuntimeService(settings=current), server)
     if bind:
         address = f"{current.grpc_host}:{current.grpc_port}"
         bound_port = server.add_insecure_port(address)

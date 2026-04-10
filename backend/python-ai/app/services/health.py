@@ -4,13 +4,19 @@ from app.services.hybrid_rag import HybridRAGService
 
 
 def build_health_report(settings: AppSettings) -> HealthReport:
+    runtime_status, runtime_detail = check_runtime_model(settings)
     embedding_status, embedding_detail = check_embedding(settings)
     elasticsearch_status, elasticsearch_detail = check_elasticsearch(settings)
     milvus_status, milvus_detail = check_milvus(settings)
 
     components = [
-        ComponentStatus(name="langchain", status="up"),
-        ComponentStatus(name="langgraph", status="up"),
+        ComponentStatus(name="fastapi_http", status="up", detail=f"port={settings.http_port}"),
+        ComponentStatus(
+            name="grpc_runtime",
+            status="up",
+            detail=f"{settings.grpc_host}:{settings.grpc_port}",
+        ),
+        ComponentStatus(name="runtime_model", status=runtime_status, detail=runtime_detail),
         ComponentStatus(name="embedding_model", status=embedding_status, detail=embedding_detail),
         ComponentStatus(name="elasticsearch", status=elasticsearch_status, detail=elasticsearch_detail),
         ComponentStatus(name="milvus", status=milvus_status, detail=milvus_detail),
@@ -22,6 +28,14 @@ def build_health_report(settings: AppSettings) -> HealthReport:
         status=overall_status([item.status for item in components]),
         components=components,
     )
+
+
+def check_runtime_model(settings: AppSettings) -> tuple[str, str]:
+    if settings.openai_api_key and settings.openai_base_url and settings.runtime_api_model:
+        return "up", f"{settings.runtime_api_model} via {settings.openai_base_url.rstrip('/')}"
+    if settings.runtime_api_model:
+        return "fallback", f"{settings.runtime_api_model} (stub fallback: missing OPENAI_API_KEY)"
+    return "down", "missing runtime model configuration"
 
 
 def check_embedding(settings: AppSettings) -> tuple[str, str]:

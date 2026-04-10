@@ -23,7 +23,7 @@ AI OnCall is a monorepo for an intelligent on-call platform with:
 ```mermaid
 flowchart LR
     Web["Vue 3 Web Console"] --> Go["Go API (Gin)"]
-    Go --> Py["Python AI (FastAPI)"]
+    Go --> Py["Python AI (FastAPI + gRPC Runtime)"]
     Go --> Data["Current Local JSON Persistence"]
     Go --> Search["Elasticsearch (target)"]
     Go --> Vector["Milvus (target)"]
@@ -74,10 +74,14 @@ Then set at least:
 ```env
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your_openai_api_key
+RUNTIME_API_MODEL=gpt-4.1-mini
+RUNTIME_API_TIMEOUT_SECONDS=30
 EMBEDDING_PROVIDER=openai_compatible
 EMBEDDING_API_MODEL=text-embedding-3-small
 EMBEDDING_DIMENSION=1536
 ```
+
+The Python service starts both HTTP and gRPC runtime endpoints in one process. Go calls the AI runtime over gRPC, while frontend SSE remains buffered and chunked by Go.
 
 ## Demo Deployment
 
@@ -135,6 +139,12 @@ Python syntax check:
 python3 -m compileall backend/python-ai/app
 ```
 
+Proto regeneration:
+
+```bash
+./scripts/proto/gen.sh
+```
+
 ## Documents
 
 - [Requirements](/Users/ouyangzhenguang/project/OnCall/docs/requirements.md)
@@ -157,6 +167,6 @@ python3 -m compileall backend/python-ai/app
 
 ## Notes
 
-- Python AI currently uses FastAPI plus a prompt/rule-based analysis service. Real model inference can be added later without changing the business API shape.
+- Python AI now exposes a gRPC runtime for alert analysis and chat QA. If `OPENAI_API_KEY` is unset, it falls back to deterministic local responses for development and tests.
 - Go startup scripts force `GOPROXY=https://proxy.golang.org,direct` by default and use project-local caches under `tmp/`.
 - The demo environment targets “fast startup and clear walkthrough”, not production deployment.
