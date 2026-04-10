@@ -54,6 +54,7 @@ def build_alert_analysis_graph(agent: AlertAnalysisAgent | None = None) -> Graph
         trace = list(state.get("trace", []))
         trace.extend(list(execution.get("trace", [])))
         return {
+            "tool_calls": list(execution.get("tool_calls", [])),
             "tool_suggested_actions": list(execution.get("suggested_actions", [])),
             "trace": trace,
         }
@@ -68,6 +69,7 @@ def build_alert_analysis_graph(agent: AlertAnalysisAgent | None = None) -> Graph
             suggested_actions=list(state.get("suggested_actions", [])),
             trace=list(state.get("trace", [])),
             tool_suggested_actions=list(state.get("tool_suggested_actions", [])),
+            tool_calls=list(state.get("tool_calls", [])),
         )
         return {"result": result}
 

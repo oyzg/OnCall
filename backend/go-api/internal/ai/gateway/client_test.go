@@ -63,6 +63,9 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 					SuggestedActions:   []string{"check dependency health"},
 					RecommendedTools:   []string{"service_status"},
 					KnowledgeQueries:   []string{"payment-api timeout"},
+					ToolCalls: []*aipb.ToolCall{
+						{Name: "service_status", ArgumentsJson: `{"service":"payment-api"}`, Outcome: "success", Summary: "payment-api is degraded"},
+					},
 					Workflow:           "alert_analysis",
 					Confidence:         0.9,
 					Source:             "python-ai-runtime",
@@ -104,6 +107,9 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 	}
 	if response.Summary != "grpc summary" {
 		t.Fatalf("unexpected summary: %s", response.Summary)
+	}
+	if len(response.ToolCalls) != 1 || response.ToolCalls[0].Name != "service_status" {
+		t.Fatalf("unexpected tool calls: %#v", response.ToolCalls)
 	}
 	if len(response.Trace) != 2 || response.Trace[0].Stage != "router" {
 		t.Fatalf("unexpected trace: %#v", response.Trace)

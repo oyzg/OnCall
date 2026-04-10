@@ -83,6 +83,7 @@ message AnalyzeAlertResponse {
   string generated_at = 11;
   string error = 12;
   repeated TraceEvent trace = 13;
+  repeated ToolCall tool_calls = 14;
 }
 
 message RunConversationTurnRequest {

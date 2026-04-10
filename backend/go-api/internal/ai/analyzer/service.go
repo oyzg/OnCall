@@ -65,6 +65,7 @@ func (s *Service) AnalyzeAlert(ctx context.Context, user authDomain.User, alert 
 		SuggestedActions:   append([]string(nil), response.SuggestedActions...),
 		RecommendedTools:   append([]string(nil), response.RecommendedTools...),
 		KnowledgeQueries:   append([]string(nil), response.KnowledgeQueries...),
+		ToolCalls:          toAlertToolCalls(response.ToolCalls),
 		Workflow:           response.Workflow,
 		Confidence:         response.Confidence,
 		Source:             response.Source,
@@ -119,6 +120,23 @@ func toAlertTrace(items []gateway.TraceEvent) []alertDomain.TraceEvent {
 			Severity:  item.Severity,
 			Timestamp: item.Timestamp,
 			Tags:      append([]string(nil), item.Tags...),
+		})
+	}
+	return result
+}
+
+func toAlertToolCalls(items []gateway.ToolCall) []alertDomain.ToolCall {
+	if len(items) == 0 {
+		return nil
+	}
+
+	result := make([]alertDomain.ToolCall, 0, len(items))
+	for _, item := range items {
+		result = append(result, alertDomain.ToolCall{
+			Name:          item.Name,
+			ArgumentsJSON: item.ArgumentsJSON,
+			Outcome:       item.Outcome,
+			Summary:       item.Summary,
 		})
 	}
 	return result

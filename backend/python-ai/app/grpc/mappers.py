@@ -65,6 +65,7 @@ class AlertAnalysisResult:
     suggested_actions: list[str] = field(default_factory=list)
     recommended_tools: list[str] = field(default_factory=list)
     knowledge_queries: list[str] = field(default_factory=list)
+    tool_calls: list[ToolCallEntry] = field(default_factory=list)
     workflow: str = "alert_analysis"
     confidence: float = 0.5
     source: str = "python-ai-runtime"
@@ -146,6 +147,15 @@ def alert_result_to_proto(result: AlertAnalysisResult) -> runtime_pb2.AnalyzeAle
         suggested_actions=list(result.suggested_actions),
         recommended_tools=list(result.recommended_tools),
         knowledge_queries=list(result.knowledge_queries),
+        tool_calls=[
+            runtime_pb2.ToolCall(
+                name=item.name,
+                arguments_json=item.arguments_json,
+                outcome=item.outcome,
+                summary=item.summary,
+            )
+            for item in result.tool_calls
+        ],
         workflow=result.workflow,
         confidence=result.confidence,
         source=result.source,

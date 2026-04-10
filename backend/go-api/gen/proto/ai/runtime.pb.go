@@ -613,6 +613,7 @@ type AnalyzeAlertResponse struct {
 	GeneratedAt        string                 `protobuf:"bytes,11,opt,name=generated_at,json=generatedAt,proto3" json:"generated_at,omitempty"`
 	Error              string                 `protobuf:"bytes,12,opt,name=error,proto3" json:"error,omitempty"`
 	Trace              []*TraceEvent          `protobuf:"bytes,13,rep,name=trace,proto3" json:"trace,omitempty"`
+	ToolCalls          []*ToolCall            `protobuf:"bytes,14,rep,name=tool_calls,json=toolCalls,proto3" json:"tool_calls,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -734,6 +735,13 @@ func (x *AnalyzeAlertResponse) GetError() string {
 func (x *AnalyzeAlertResponse) GetTrace() []*TraceEvent {
 	if x != nil {
 		return x.Trace
+	}
+	return nil
+}
+
+func (x *AnalyzeAlertResponse) GetToolCalls() []*ToolCall {
+	if x != nil {
+		return x.ToolCalls
 	}
 	return nil
 }
@@ -1119,7 +1127,7 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\x11linked_session_id\x18\f \x01(\tR\x0flinkedSessionId\x12\x17\n" +
 	"\auser_id\x18\r \x01(\tR\x06userId\x12\x1d\n" +
 	"\n" +
-	"user_roles\x18\x0e \x03(\tR\tuserRoles\"\xe6\x03\n" +
+	"user_roles\x18\x0e \x03(\tR\tuserRoles\"\x9d\x04\n" +
 	"\x14AnalyzeAlertResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12/\n" +
@@ -1136,7 +1144,9 @@ const file_ai_runtime_proto_rawDesc = "" +
 	" \x01(\tR\x06source\x12!\n" +
 	"\fgenerated_at\x18\v \x01(\tR\vgeneratedAt\x12\x14\n" +
 	"\x05error\x18\f \x01(\tR\x05error\x12.\n" +
-	"\x05trace\x18\r \x03(\v2\x18.oncall.ai.v1.TraceEventR\x05trace\"\x95\x03\n" +
+	"\x05trace\x18\r \x03(\v2\x18.oncall.ai.v1.TraceEventR\x05trace\x125\n" +
+	"\n" +
+	"tool_calls\x18\x0e \x03(\v2\x16.oncall.ai.v1.ToolCallR\ttoolCalls\"\x95\x03\n" +
 	"\x1aRunConversationTurnRequest\x12=\n" +
 	"\bmetadata\x18\x01 \x01(\v2!.oncall.common.v1.RequestMetadataR\bmetadata\x12\x1d\n" +
 	"\n" +
@@ -1202,25 +1212,26 @@ var file_ai_runtime_proto_depIdxs = []int32{
 	1,  // 0: oncall.ai.v1.ConversationMessage.citations:type_name -> oncall.ai.v1.Citation
 	11, // 1: oncall.ai.v1.AnalyzeAlertRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
 	0,  // 2: oncall.ai.v1.AnalyzeAlertResponse.trace:type_name -> oncall.ai.v1.TraceEvent
-	11, // 3: oncall.ai.v1.RunConversationTurnRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
-	3,  // 4: oncall.ai.v1.RunConversationTurnRequest.history:type_name -> oncall.ai.v1.ConversationMessage
-	4,  // 5: oncall.ai.v1.RunConversationTurnRequest.linked_alert:type_name -> oncall.ai.v1.LinkedAlert
-	1,  // 6: oncall.ai.v1.RunConversationTurnResponse.citations:type_name -> oncall.ai.v1.Citation
-	2,  // 7: oncall.ai.v1.RunConversationTurnResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
-	0,  // 8: oncall.ai.v1.RunConversationTurnResponse.trace:type_name -> oncall.ai.v1.TraceEvent
-	11, // 9: oncall.ai.v1.HealthRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
-	0,  // 10: oncall.ai.v1.HealthResponse.trace:type_name -> oncall.ai.v1.TraceEvent
-	5,  // 11: oncall.ai.v1.RuntimeService.AnalyzeAlert:input_type -> oncall.ai.v1.AnalyzeAlertRequest
-	7,  // 12: oncall.ai.v1.RuntimeService.RunConversationTurn:input_type -> oncall.ai.v1.RunConversationTurnRequest
-	9,  // 13: oncall.ai.v1.RuntimeService.Health:input_type -> oncall.ai.v1.HealthRequest
-	6,  // 14: oncall.ai.v1.RuntimeService.AnalyzeAlert:output_type -> oncall.ai.v1.AnalyzeAlertResponse
-	8,  // 15: oncall.ai.v1.RuntimeService.RunConversationTurn:output_type -> oncall.ai.v1.RunConversationTurnResponse
-	10, // 16: oncall.ai.v1.RuntimeService.Health:output_type -> oncall.ai.v1.HealthResponse
-	14, // [14:17] is the sub-list for method output_type
-	11, // [11:14] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	2,  // 3: oncall.ai.v1.AnalyzeAlertResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
+	11, // 4: oncall.ai.v1.RunConversationTurnRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
+	3,  // 5: oncall.ai.v1.RunConversationTurnRequest.history:type_name -> oncall.ai.v1.ConversationMessage
+	4,  // 6: oncall.ai.v1.RunConversationTurnRequest.linked_alert:type_name -> oncall.ai.v1.LinkedAlert
+	1,  // 7: oncall.ai.v1.RunConversationTurnResponse.citations:type_name -> oncall.ai.v1.Citation
+	2,  // 8: oncall.ai.v1.RunConversationTurnResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
+	0,  // 9: oncall.ai.v1.RunConversationTurnResponse.trace:type_name -> oncall.ai.v1.TraceEvent
+	11, // 10: oncall.ai.v1.HealthRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
+	0,  // 11: oncall.ai.v1.HealthResponse.trace:type_name -> oncall.ai.v1.TraceEvent
+	5,  // 12: oncall.ai.v1.RuntimeService.AnalyzeAlert:input_type -> oncall.ai.v1.AnalyzeAlertRequest
+	7,  // 13: oncall.ai.v1.RuntimeService.RunConversationTurn:input_type -> oncall.ai.v1.RunConversationTurnRequest
+	9,  // 14: oncall.ai.v1.RuntimeService.Health:input_type -> oncall.ai.v1.HealthRequest
+	6,  // 15: oncall.ai.v1.RuntimeService.AnalyzeAlert:output_type -> oncall.ai.v1.AnalyzeAlertResponse
+	8,  // 16: oncall.ai.v1.RuntimeService.RunConversationTurn:output_type -> oncall.ai.v1.RunConversationTurnResponse
+	10, // 17: oncall.ai.v1.RuntimeService.Health:output_type -> oncall.ai.v1.HealthResponse
+	15, // [15:18] is the sub-list for method output_type
+	12, // [12:15] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_ai_runtime_proto_init() }

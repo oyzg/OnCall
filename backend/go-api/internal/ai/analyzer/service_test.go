@@ -43,6 +43,9 @@ func (c *captureOrchestrator) HandleAlertAnalysis(_ context.Context, request gat
 		SeverityAssessment: "captured severity",
 		Confidence:         "high",
 		GeneratedAt:        "2026-04-09T10:00:00Z",
+		ToolCalls: []gateway.ToolCall{
+			{Name: "service_status", ArgumentsJSON: `{"service":"payment-api"}`, Outcome: "success", Summary: "payment-api degraded"},
+		},
 		Trace: []gateway.TraceEvent{
 			{Stage: "router", Message: "alert route selected", Severity: "info"},
 		},
@@ -112,6 +115,9 @@ func TestAnalyzeAlertPassesUserContextToGateway(t *testing.T) {
 	}
 	if orchestrator.request.AlertID != "alert-1" {
 		t.Fatalf("expected alert id to be forwarded, got %s", orchestrator.request.AlertID)
+	}
+	if len(analysis.ToolCalls) != 1 || analysis.ToolCalls[0].Name != "service_status" {
+		t.Fatalf("expected tool calls to be mapped, got %#v", analysis.ToolCalls)
 	}
 	if len(analysis.Trace) != 1 || analysis.Trace[0].Stage != "router" {
 		t.Fatalf("expected runtime trace to be mapped, got %#v", analysis.Trace)

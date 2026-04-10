@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.grpc.mappers import TraceEntry, bootstrap_proto_modules
+from app.grpc.mappers import ToolCallEntry, TraceEntry, bootstrap_proto_modules
 
 bootstrap_proto_modules()
 
@@ -50,6 +50,27 @@ class FakeToolAgent:
                     stage="tool",
                     message="normalized alert tool recommendations",
                     tags=["tool-enrichment"],
+                )
+            ],
+        }
+
+    def execute_alert_tools(self, request: runtime_pb2.AnalyzeAlertRequest, recommended_tools: list[str], *, limit: int = 2) -> dict[str, object]:
+        del request, recommended_tools, limit
+        return {
+            "tool_calls": [
+                ToolCallEntry(
+                    name="service_status",
+                    arguments_json='{"service":"user-service","environment":"prod"}',
+                    outcome="success",
+                    summary="Executed service_status for user-service in prod. Current risk is degraded.",
+                )
+            ],
+            "suggested_actions": ["Use service_status: service is degraded in prod."],
+            "trace": [
+                TraceEntry(
+                    stage="tool",
+                    message="executed service_status successfully",
+                    tags=["tool-execution"],
                 )
             ],
         }
@@ -115,6 +136,8 @@ class AlertAnalysisAgentTest(unittest.TestCase):
         self.assertTrue(result.possible_causes)
         self.assertTrue(result.suggested_actions)
         self.assertEqual(["knowledge_search", "service_status"], result.recommended_tools)
+        self.assertEqual(1, len(result.tool_calls))
+        self.assertEqual("service_status", result.tool_calls[0].name)
         self.assertTrue(result.knowledge_queries)
         self.assertTrue(result.workflow)
         self.assertTrue(result.source)

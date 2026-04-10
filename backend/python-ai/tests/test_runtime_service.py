@@ -130,6 +130,7 @@ class RuntimeServiceTest(unittest.TestCase):
         self.assertEqual("ready", response.status)
         self.assertEqual("router_alert_analysis", response.workflow)
         self.assertIn("payment-api", response.summary)
+        self.assertTrue(response.tool_calls)
         self.assertTrue(response.trace)
         self.assertEqual("router", response.trace[0].stage)
         self.assertEqual("alert_analysis", response.trace[-1].stage)

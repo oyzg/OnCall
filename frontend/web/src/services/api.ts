@@ -204,6 +204,7 @@ export interface AlertAnalysis {
   suggested_actions: string[];
   recommended_tools: string[];
   knowledge_queries: string[];
+  tool_calls?: ChatToolCall[];
   workflow: string;
   confidence: string;
   source: string;

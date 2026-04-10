@@ -30,12 +30,20 @@ type AlertAnalysis struct {
 	SuggestedActions   []string     `json:"suggested_actions,omitempty"`
 	RecommendedTools   []string     `json:"recommended_tools,omitempty"`
 	KnowledgeQueries   []string     `json:"knowledge_queries,omitempty"`
+	ToolCalls          []ToolCall   `json:"tool_calls,omitempty"`
 	Workflow           string       `json:"workflow,omitempty"`
 	Confidence         string       `json:"confidence,omitempty"`
 	Source             string       `json:"source,omitempty"`
 	GeneratedAt        time.Time    `json:"generated_at"`
 	Error              string       `json:"error,omitempty"`
 	Trace              []TraceEvent `json:"trace,omitempty"`
+}
+
+type ToolCall struct {
+	Name          string `json:"name,omitempty"`
+	ArgumentsJSON string `json:"arguments_json,omitempty"`
+	Outcome       string `json:"outcome,omitempty"`
+	Summary       string `json:"summary,omitempty"`
 }
 
 type TraceEvent struct {

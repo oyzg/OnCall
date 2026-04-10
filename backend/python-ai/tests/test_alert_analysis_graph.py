@@ -164,6 +164,7 @@ class AlertAnalysisGraphTest(unittest.TestCase):
 
         self.assertEqual("ready", response.status)
         self.assertTrue(response.recommended_tools)
+        self.assertTrue(response.tool_calls)
         stages = [entry.stage for entry in response.trace]
         self.assertIn("rag", stages)
         self.assertIn("tool", stages)

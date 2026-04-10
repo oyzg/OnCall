@@ -119,6 +119,9 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	if !strings.Contains(analyzeBody, `"source":"python-ai-runtime-router-alert-graph"`) {
 		t.Fatalf("expected runtime source in analysis result, got %s", analyzeBody)
 	}
+	if !strings.Contains(analyzeBody, `"tool_calls"`) || !strings.Contains(analyzeBody, `"service_status"`) {
+		t.Fatalf("expected runtime tool call metadata in analysis result, got %s", analyzeBody)
+	}
 	if !strings.Contains(analyzeBody, `"trace"`) || !strings.Contains(analyzeBody, `"stage":"router"`) {
 		t.Fatalf("expected runtime trace in analysis result, got %s", analyzeBody)
 	}
@@ -246,6 +249,9 @@ func (fakeRuntimeService) AnalyzeAlert(_ context.Context, request *aipb.AnalyzeA
 		},
 		RecommendedTools: []string{"knowledge_search", "service_status"},
 		KnowledgeQueries: []string{request.GetService() + " " + request.GetTitle()},
+		ToolCalls: []*aipb.ToolCall{
+			{Name: "service_status", ArgumentsJson: `{"service":"user-service","environment":"staging"}`, Outcome: "success", Summary: "user-service is degraded in staging"},
+		},
 		Workflow:         "router_alert_analysis",
 		Confidence:       0.92,
 		Source:           "python-ai-runtime-router-alert-graph",

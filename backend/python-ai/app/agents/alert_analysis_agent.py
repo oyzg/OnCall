@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.agents.tool_agent import ToolAgent
-from app.grpc.mappers import AlertAnalysisResult, TraceEntry, bootstrap_proto_modules
+from app.grpc.mappers import AlertAnalysisResult, ToolCallEntry, TraceEntry, bootstrap_proto_modules
 from app.llm.openai_compatible import OpenAICompatibleClient, build_openai_compatible_client
 from app.schemas.rag import RAGReference
 from app.services.hybrid_rag import HybridRAGService
@@ -43,6 +43,7 @@ class AlertAnalysisAgent:
             suggested_actions=decision["suggested_actions"],
             trace=trace,
             tool_suggested_actions=execution["suggested_actions"],
+            tool_calls=execution["tool_calls"],
         )
 
     def prepare_alert_context(self, request: runtime_pb2.AnalyzeAlertRequest) -> dict[str, object]:
@@ -105,13 +106,18 @@ class AlertAnalysisAgent:
         recommended_tools: list[str],
     ) -> dict[str, object]:
         if self.tool_agent is None or not hasattr(self.tool_agent, "execute_alert_tools"):
-            return {"suggested_actions": [], "trace": []}
+            return {"suggested_actions": [], "trace": [], "tool_calls": []}
         execution = self.tool_agent.execute_alert_tools(request, recommended_tools, limit=2)
         if not isinstance(execution, dict):
-            return {"suggested_actions": [], "trace": []}
+            return {"suggested_actions": [], "trace": [], "tool_calls": []}
         return {
             "suggested_actions": self._normalize_list(execution.get("suggested_actions"), []),
             "trace": self._normalize_trace(execution.get("trace", [])),
+            "tool_calls": [
+                item
+                for item in execution.get("tool_calls", [])
+                if isinstance(item, ToolCallEntry)
+            ],
         }
 
     def finalize_alert_analysis(
@@ -125,6 +131,7 @@ class AlertAnalysisAgent:
         suggested_actions: list[str],
         trace: list[TraceEntry],
         tool_suggested_actions: list[str],
+        tool_calls: list[ToolCallEntry],
     ) -> AlertAnalysisResult:
         final_trace = list(trace)
         final_trace.append(
@@ -147,6 +154,7 @@ class AlertAnalysisAgent:
             suggested_actions=self._merge_unique(suggested_actions, tool_suggested_actions),
             recommended_tools=recommended_tools,
             knowledge_queries=knowledge_queries,
+            tool_calls=tool_calls,
             workflow="router_alert_analysis",
             confidence=0.9 if (request.severity.strip().upper() or "P3") in {"P0", "P1"} else 0.6,
             source="python-ai-runtime-router-alert-graph",

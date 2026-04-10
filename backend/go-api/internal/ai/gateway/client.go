@@ -109,6 +109,7 @@ type AlertAnalysisResponse struct {
 	SuggestedActions   []string     `json:"suggested_actions"`
 	RecommendedTools   []string     `json:"recommended_tools"`
 	KnowledgeQueries   []string     `json:"knowledge_queries"`
+	ToolCalls          []ToolCall   `json:"tool_calls,omitempty"`
 	Workflow           string       `json:"workflow"`
 	Confidence         string       `json:"confidence"`
 	Source             string       `json:"source"`
@@ -349,6 +350,7 @@ func (c *HTTPClient) AnalyzeAlert(ctx context.Context, request AlertAnalysisRequ
 		SuggestedActions:   append([]string(nil), response.GetSuggestedActions()...),
 		RecommendedTools:   append([]string(nil), response.GetRecommendedTools()...),
 		KnowledgeQueries:   append([]string(nil), response.GetKnowledgeQueries()...),
+		ToolCalls:          toolCallsFromProto(response.GetToolCalls()),
 		Workflow:           response.GetWorkflow(),
 		Confidence:         confidenceLabel(response.GetConfidence()),
 		Source:             response.GetSource(),
@@ -594,6 +596,26 @@ func traceEventsFromProto(trace []*aipb.TraceEvent) []TraceEvent {
 			Severity:  item.GetSeverity(),
 			Timestamp: item.GetTimestamp(),
 			Tags:      append([]string(nil), item.GetTags()...),
+		})
+	}
+	return result
+}
+
+func toolCallsFromProto(items []*aipb.ToolCall) []ToolCall {
+	if len(items) == 0 {
+		return nil
+	}
+
+	result := make([]ToolCall, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		result = append(result, ToolCall{
+			Name:          item.GetName(),
+			ArgumentsJSON: item.GetArgumentsJson(),
+			Outcome:       item.GetOutcome(),
+			Summary:       item.GetSummary(),
 		})
 	}
 	return result

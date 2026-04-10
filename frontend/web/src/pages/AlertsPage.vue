@@ -159,10 +159,26 @@
                 <div class="message-meta">
                   <span v-if="alertAnalysis.workflow" class="route-chip">Workflow: {{ alertAnalysis.workflow }}</span>
                   <span v-if="alertAnalysis.source" class="route-chip">Source: {{ alertAnalysis.source }}</span>
+                  <span v-if="alertAnalysis.tool_calls?.length" class="meta-count">Tools: {{ alertAnalysis.tool_calls.length }}</span>
                   <span v-if="alertAnalysis.trace?.length" class="meta-count">Trace: {{ alertAnalysis.trace.length }}</span>
                 </div>
 
-                <div v-if="alertAnalysis.recommended_tools.length" class="tool-call-list">
+                <div v-if="alertAnalysis.tool_calls?.length" class="tool-call-list">
+                  <div
+                    v-for="toolCall in alertAnalysis.tool_calls"
+                    :key="`${toolCall.name}-${toolCall.arguments_json || toolCall.summary}`"
+                    class="tool-call-card"
+                  >
+                    <header>
+                      <strong>{{ toolCall.name }}</strong>
+                      <span>{{ toolCall.outcome || "unknown" }}</span>
+                    </header>
+                    <p v-if="toolCall.summary">{{ toolCall.summary }}</p>
+                    <pre v-if="toolCall.arguments_json">{{ toolCall.arguments_json }}</pre>
+                  </div>
+                </div>
+
+                <div v-else-if="alertAnalysis.recommended_tools.length" class="tool-call-list">
                   <div
                     v-for="tool in alertAnalysis.recommended_tools"
                     :key="tool"
@@ -665,6 +681,17 @@ function toolSummary(tool: string) {
   margin: 8px 0 0;
   font-size: 13px;
   color: #334155;
+}
+
+.tool-call-card pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .trace-item small {
