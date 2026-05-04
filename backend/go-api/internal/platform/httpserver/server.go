@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	agentActionAPI "github.com/oyzg/OnCall/backend/go-api/internal/agentaction/api"
+	agentActionApp "github.com/oyzg/OnCall/backend/go-api/internal/agentaction/application"
+	agentActionInfra "github.com/oyzg/OnCall/backend/go-api/internal/agentaction/infrastructure"
 	aiAnalyzer "github.com/oyzg/OnCall/backend/go-api/internal/ai/analyzer"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/eino"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/gateway"
@@ -53,11 +56,13 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	authService := authApp.NewService(cfg.Auth)
 	auditService := auditApp.NewService()
 	aiClient := gateway.NewHTTPClient(cfg.AI)
+	aiOrchestrator := eino.NewStubOrchestrator(aiClient)
 	sessionService := sessionApp.NewService()
 	knowledgeService := knowledgeApp.NewService()
-	alertAnalyzer := aiAnalyzer.NewService(eino.NewStubOrchestrator(aiClient))
+	alertAnalyzer := aiAnalyzer.NewService(aiOrchestrator)
 	alertService := alertApp.NewService(sessionService, alertAnalyzer)
 	var toolRepo toolApp.Repository
+	var agentActionRepo agentActionApp.Repository
 	if cfg.MySQL.Enabled {
 		gdb, err := db.Open(db.Config{
 			Driver:      cfg.MySQL.Driver,
@@ -82,6 +87,7 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 		alertService = alertApp.NewServiceWithRepository(sessionService, alertAnalyzer, alertInfra.NewMySQLRepository(gdb))
 		auditService = auditApp.NewServiceWithRepository(auditInfra.NewMySQLRepository(gdb))
 		toolRepo = toolInfra.NewMySQLRepository(gdb)
+		agentActionRepo = agentActionInfra.NewMySQLRepository(gdb)
 	}
 	authHandler := authAPI.NewHandler(authService, auditService)
 	auditHandler := auditAPI.NewHandler(auditService)
@@ -90,16 +96,18 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	retrievalService := retrievalApp.NewService(knowledgeService)
 	retrievalService.SetRemoteRetriever(aiClient)
 	retrievalHandler := retrievalAPI.NewHandler(retrievalService)
-	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, auditService)
 	alertService.EnsureSeeded()
-	alertHandler := alertAPI.NewHandler(alertService, auditService)
+	agentActionService := agentActionApp.NewService(alertService, sessionService, agentActionRepo)
+	sessionHandler := sessionAPI.NewHandler(sessionService, retrievalService, aiOrchestrator, auditService, agentActionService, alertService)
+	alertHandler := alertAPI.NewHandler(alertService, auditService, agentActionService)
 	var toolService *toolApp.Service
 	if toolRepo != nil {
 		toolService = toolApp.NewServiceWithRepository(alertService, retrievalService, sessionService, knowledgeService, toolRepo)
 	} else {
 		toolService = toolApp.NewService(alertService, retrievalService, sessionService, knowledgeService)
 	}
-	toolHandler := toolAPI.NewHandler(toolService, auditService)
+	toolHandler := toolAPI.NewHandler(toolService, auditService, cfg.AI.RuntimeSharedSecret)
+	agentActionHandler := agentActionAPI.NewHandler(agentActionService, auditService)
 
 	router.GET("/", func(c *gin.Context) {
 		response.Success(c.Writer, 200, utils.RequestIDFromContext(c.Request.Context()), map[string]string{
@@ -125,6 +133,9 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 			"detail":  err.Error(),
 		})
 	})
+
+	internalToolGroup := router.Group("/internal/ai/tools")
+	internalToolGroup.POST("/:toolName/call", toolHandler.CallToolInternal)
 
 	authGroup := router.Group("/api/v1/auth")
 	authGroup.POST("/login", authHandler.Login)
@@ -160,6 +171,10 @@ func registerRoutes(router *gin.Engine, cfg config.Config) {
 	alertGroup.POST("/:alertID/status", alertHandler.UpdateStatus)
 	alertGroup.POST("/:alertID/session", alertHandler.LinkSession)
 	alertGroup.POST("/:alertID/analyze", alertHandler.Analyze)
+
+	agentActionGroup := router.Group("/api/v1/agent-actions")
+	agentActionGroup.Use(middleware.Auth(authService))
+	agentActionGroup.POST("/:actionID/confirm", agentActionHandler.Confirm)
 
 	toolGroup := router.Group("/api/v1/tools")
 	toolGroup.Use(middleware.Auth(authService))

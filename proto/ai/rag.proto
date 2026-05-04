@@ -6,6 +6,7 @@ option go_package = "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai;aipb";
 
 import "common/metadata.proto";
 
+// Deprecated: replaced by proto/ai/runtime.proto and RuntimeService.
 message RagRequest {
   oncall.common.v1.RequestMetadata metadata = 1;
   string query = 2;
@@ -22,7 +23,7 @@ message RagResponse {
   repeated RagChunk chunks = 1;
 }
 
+// Deprecated: replaced by proto/ai/runtime.proto and RuntimeService.
 service RAGService {
   rpc Retrieve(RagRequest) returns (RagResponse);
 }
-

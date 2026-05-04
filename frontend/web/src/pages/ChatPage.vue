@@ -49,6 +49,88 @@
             <span>{{ formatTime(message.created_at) }}</span>
           </header>
           <p>{{ message.content || (message.status === 'streaming' ? '正在生成回复...' : '') }}</p>
+          <div v-if="message.role === 'assistant' && hasMessageDiagnostics(message)" class="message-diagnostics">
+            <div class="message-meta">
+              <span v-if="message.route" class="route-chip">Route: {{ message.route }}</span>
+              <span v-if="message.tool_calls?.length" class="meta-count">Tools: {{ message.tool_calls.length }}</span>
+              <span v-if="message.agent_plan?.length" class="meta-count">Plan: {{ message.agent_plan.length }}</span>
+              <span v-if="message.pending_actions?.length" class="meta-count">Actions: {{ message.pending_actions.length }}</span>
+              <span v-if="message.trace?.length" class="meta-count">Trace: {{ message.trace.length }}</span>
+            </div>
+
+            <div v-if="message.agent_plan?.length" class="agent-plan-list">
+              <div
+                v-for="step in message.agent_plan"
+                :key="`${message.id}-${step.step_id}-${step.phase}`"
+                class="agent-plan-step"
+              >
+                <header>
+                  <strong>{{ step.phase || "step" }}</strong>
+                  <span>{{ step.status || "completed" }}</span>
+                </header>
+                <p>{{ step.description }}</p>
+                <small v-if="step.tool_name || step.observation">
+                  {{ [step.tool_name ? `Tool: ${step.tool_name}` : "", step.observation].filter(Boolean).join(" · ") }}
+                </small>
+              </div>
+            </div>
+
+            <div v-if="message.pending_actions?.length" class="pending-action-list">
+              <div
+                v-for="action in message.pending_actions"
+                :key="`${message.id}-${action.action_id}`"
+                class="pending-action-card"
+              >
+                <header>
+                  <strong>{{ action.title || action.action_type }}</strong>
+                  <span>{{ action.status }} · {{ action.risk_level || "low" }}</span>
+                </header>
+                <p v-if="action.description">{{ action.description }}</p>
+                <pre v-if="action.arguments_json">{{ action.arguments_json }}</pre>
+                <el-button
+                  v-if="action.status === 'pending'"
+                  size="small"
+                  type="primary"
+                  :loading="isActionConfirming(action.action_id)"
+                  @click="handleConfirmAction(action.action_id)"
+                >
+                  确认执行
+                </el-button>
+              </div>
+            </div>
+
+            <div v-if="message.tool_calls?.length" class="tool-call-list">
+              <div
+                v-for="toolCall in message.tool_calls"
+                :key="`${message.id}-${toolCall.name}-${toolCall.arguments_json}`"
+                class="tool-call-card"
+              >
+                <header>
+                  <strong>{{ toolCall.name }}</strong>
+                  <span>{{ toolCall.outcome || "unknown" }}</span>
+                </header>
+                <p v-if="toolCall.summary">{{ toolCall.summary }}</p>
+                <pre v-if="toolCall.arguments_json">{{ toolCall.arguments_json }}</pre>
+              </div>
+            </div>
+
+            <div v-if="message.trace?.length" class="trace-list">
+              <div
+                v-for="(trace, index) in message.trace"
+                :key="`${message.id}-${trace.stage}-${index}`"
+                class="trace-item"
+              >
+                <div class="trace-stage">
+                  <strong>{{ trace.stage }}</strong>
+                  <span>{{ trace.severity || "info" }}</span>
+                </div>
+                <p>{{ trace.message }}</p>
+                <small v-if="trace.timestamp || trace.tags?.length">
+                  {{ [trace.timestamp ? formatTraceTime(trace.timestamp) : "", trace.tags?.length ? trace.tags.join(" · ") : ""].filter(Boolean).join(" · ") }}
+                </small>
+              </div>
+            </div>
+          </div>
           <div v-if="message.references?.length" class="reference-list">
             <strong>引用片段</strong>
             <div
@@ -97,6 +179,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import {
   createSession,
+  confirmAgentAction,
   deleteSession,
   fetchSessionMessages,
   fetchSessions,
@@ -110,6 +193,7 @@ const activeSessionId = ref("");
 const messages = ref<ChatMessage[]>([]);
 const draft = ref("");
 const sending = ref(false);
+const confirmingActionIds = ref<string[]>([]);
 const messageListRef = ref<HTMLElement | null>(null);
 const composerTextareaRef = ref<HTMLTextAreaElement | null>(null);
 const sessionLoadToken = ref(0);
@@ -240,7 +324,7 @@ async function handleSend() {
         target.status = "streaming";
         await scrollToBottom();
       },
-      onDone: ({ message_id, content: finalContent, references }) => {
+      onDone: ({ message_id, content: finalContent, references, route, tool_calls, trace, agent_plan, pending_actions }) => {
         const target = messages.value.find((item) => item.id === assistantMessage.id || item.id === message_id);
         if (!target) {
           return;
@@ -249,6 +333,11 @@ async function handleSend() {
         target.id = message_id;
         target.content = finalContent;
         target.status = "completed";
+        target.route = route || "";
+        target.tool_calls = tool_calls || [];
+        target.trace = trace || [];
+        target.agent_plan = agent_plan || [];
+        target.pending_actions = pending_actions || [];
         target.references = references || [];
       },
     });
@@ -268,6 +357,47 @@ function handleDraftInput(event: Event) {
   draft.value = (event.target as HTMLTextAreaElement).value;
 }
 
+function hasMessageDiagnostics(message: ChatMessage) {
+  return Boolean(
+    message.route ||
+      message.tool_calls?.length ||
+      message.trace?.length ||
+      message.agent_plan?.length ||
+      message.pending_actions?.length
+  );
+}
+
+function isActionConfirming(actionId: string) {
+  return confirmingActionIds.value.includes(actionId);
+}
+
+async function handleConfirmAction(actionId: string) {
+  if (!actionId || isActionConfirming(actionId)) {
+    return;
+  }
+  confirmingActionIds.value = [...confirmingActionIds.value, actionId];
+  try {
+    const result = await confirmAgentAction(actionId);
+    updateLocalActionStatus(actionId, result.data.action.status);
+    ElMessage.success("Agent 动作已执行");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "Agent 动作执行失败");
+  } finally {
+    confirmingActionIds.value = confirmingActionIds.value.filter((item) => item !== actionId);
+  }
+}
+
+function updateLocalActionStatus(actionId: string, status: "pending" | "executed" | "failed") {
+  for (const message of messages.value) {
+    if (!message.pending_actions?.length) {
+      continue;
+    }
+    message.pending_actions = message.pending_actions.map((action) =>
+      action.action_id === actionId ? { ...action, status } : action
+    );
+  }
+}
+
 function formatTime(value: string) {
   return new Date(value).toLocaleString("zh-CN", {
     hour12: false,
@@ -275,6 +405,21 @@ function formatTime(value: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+  });
+}
+
+function formatTraceTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 
@@ -455,6 +600,101 @@ async function focusComposer() {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px dashed rgba(148, 163, 184, 0.45);
+}
+
+.message-diagnostics {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.45);
+  display: grid;
+  gap: 12px;
+}
+
+.message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.route-chip,
+.meta-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #334155;
+  font-size: 12px;
+}
+
+.agent-plan-list,
+.pending-action-list,
+.tool-call-list,
+.trace-list {
+  display: grid;
+  gap: 10px;
+}
+
+.agent-plan-step,
+.pending-action-card,
+.tool-call-card,
+.trace-item {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(241, 245, 249, 0.9);
+}
+
+.agent-plan-step header,
+.pending-action-card header,
+.tool-call-card header,
+.trace-stage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-plan-step p,
+.pending-action-card p,
+.tool-call-card p,
+.trace-item p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #334155;
+}
+
+.agent-plan-step small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pending-action-card {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  background: rgba(239, 246, 255, 0.92);
+}
+
+.pending-action-card .el-button {
+  margin-top: 10px;
+}
+
+.pending-action-card pre,
+.tool-call-card pre {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.trace-item small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
 }
 
 .reference-list > strong {

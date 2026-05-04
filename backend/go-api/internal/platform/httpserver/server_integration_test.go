@@ -2,9 +2,11 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,8 +16,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	aipb "github.com/oyzg/OnCall/backend/go-api/gen/proto/ai"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/config"
 	"github.com/oyzg/OnCall/backend/go-api/pkg/logger"
+	"google.golang.org/grpc"
 )
 
 type envelope[T any] struct {
@@ -37,31 +41,11 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 		_ = os.Chdir(originalWD)
 	}()
 
+	runtimeTarget, stopRuntime := startRuntimeServer(t)
+	defer stopRuntime()
+
 	gin.SetMode(gin.TestMode)
-	router := New(config.Config{
-		App: config.AppConfig{
-			Name:     "go-api",
-			Env:      "test",
-			LogLevel: "ERROR",
-		},
-		MySQL: config.MySQLConfig{
-			Enabled:     true,
-			Driver:      "sqlite",
-			DSN:         filepath.Join(tempRoot, "integration.db"),
-			PingTimeout: time.Second,
-			AutoMigrate: true,
-		},
-		AI: config.AIConfig{
-			HTTPBaseURL: "http://127.0.0.1:65535",
-			HTTPTimeout: 100 * time.Millisecond,
-			GRPCTarget:  "127.0.0.1:50051",
-			PingTimeout: time.Second,
-		},
-		Auth: config.AuthConfig{
-			JWTSecret:      "integration-secret",
-			TokenExpiresIn: 24 * time.Hour,
-		},
-	}, logger.New("ERROR"))
+	router := New(newIntegrationConfig(tempRoot, runtimeTarget), logger.New("ERROR"))
 
 	assertStatus(t, router, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong"}`, "", "application/json", http.StatusUnauthorized)
 
@@ -71,6 +55,49 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	streamBody := request(t, router, http.MethodPost, "/api/v1/sessions/"+sessionID+"/messages/stream", `{"content":"请帮我分析 user-service error ratio increased"}`, token, "application/json", http.StatusOK)
 	if !strings.Contains(streamBody, "event: done") {
 		t.Fatalf("expected SSE done event, got %s", streamBody)
+	}
+	if !strings.Contains(streamBody, "runtime answer for 请帮我分析 user-service error ratio increased") {
+		t.Fatalf("expected runtime-backed chat answer, got %s", streamBody)
+	}
+	if !strings.Contains(streamBody, "User Service Runbook") {
+		t.Fatalf("expected runtime-backed references in SSE payload, got %s", streamBody)
+	}
+	if !strings.Contains(streamBody, `"route":"chat_qa"`) {
+		t.Fatalf("expected route metadata in SSE payload, got %s", streamBody)
+	}
+	if !strings.Contains(streamBody, `"trace"`) {
+		t.Fatalf("expected trace metadata in SSE payload, got %s", streamBody)
+	}
+
+	messagesBody := request(t, router, http.MethodGet, "/api/v1/sessions/"+sessionID+"/messages", "", token, "", http.StatusOK)
+	if !strings.Contains(messagesBody, "runtime answer for 请帮我分析 user-service error ratio increased") {
+		t.Fatalf("expected persisted runtime-backed assistant message, got %s", messagesBody)
+	}
+	if !strings.Contains(messagesBody, "User Service Runbook") {
+		t.Fatalf("expected persisted runtime-backed references, got %s", messagesBody)
+	}
+	if !strings.Contains(messagesBody, `"route":"chat_qa"`) {
+		t.Fatalf("expected persisted route metadata, got %s", messagesBody)
+	}
+	if !strings.Contains(messagesBody, `"trace"`) {
+		t.Fatalf("expected persisted trace metadata, got %s", messagesBody)
+	}
+
+	toolSessionID := createSession(t, router, token, "tool integration session")
+	toolStreamBody := request(t, router, http.MethodPost, "/api/v1/sessions/"+toolSessionID+"/messages/stream", `{"content":"Please run a tool to check user-service status"}`, token, "application/json", http.StatusOK)
+	if !strings.Contains(toolStreamBody, `"route":"tool"`) {
+		t.Fatalf("expected tool route in SSE payload, got %s", toolStreamBody)
+	}
+	if !strings.Contains(toolStreamBody, `"tool_calls"`) || !strings.Contains(toolStreamBody, `"service_status"`) {
+		t.Fatalf("expected tool call metadata in SSE payload, got %s", toolStreamBody)
+	}
+
+	toolMessagesBody := request(t, router, http.MethodGet, "/api/v1/sessions/"+toolSessionID+"/messages", "", token, "", http.StatusOK)
+	if !strings.Contains(toolMessagesBody, `"route":"tool"`) {
+		t.Fatalf("expected persisted tool route metadata, got %s", toolMessagesBody)
+	}
+	if !strings.Contains(toolMessagesBody, `"tool_calls"`) || !strings.Contains(toolMessagesBody, `"service_status"`) {
+		t.Fatalf("expected persisted tool call metadata, got %s", toolMessagesBody)
 	}
 
 	uploadKnowledgeDocument(t, router, token, "User Service SOP", "runbook", "user-service error ratio increased handling guide")
@@ -83,13 +110,73 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 
 	alertID := firstAlertID(t, router, token)
 	analyzeBody := request(t, router, http.MethodPost, "/api/v1/alerts/"+alertID+"/analyze", "", token, "application/json", http.StatusOK)
-	if !strings.Contains(analyzeBody, `"status":"failed"`) {
-		t.Fatalf("expected fallback analysis result, got %s", analyzeBody)
+	if !strings.Contains(analyzeBody, `"status":"ready"`) {
+		t.Fatalf("expected runtime-backed analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"workflow":"router_alert_analysis"`) {
+		t.Fatalf("expected runtime workflow in analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"source":"python-ai-runtime-router-alert-graph"`) {
+		t.Fatalf("expected runtime source in analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"tool_calls"`) || !strings.Contains(analyzeBody, `"service_status"`) {
+		t.Fatalf("expected runtime tool call metadata in analysis result, got %s", analyzeBody)
+	}
+	if !strings.Contains(analyzeBody, `"trace"`) || !strings.Contains(analyzeBody, `"stage":"router"`) {
+		t.Fatalf("expected runtime trace in analysis result, got %s", analyzeBody)
+	}
+	if strings.Contains(analyzeBody, `"pending_actions"`) {
+		t.Fatalf("alert center analysis must not expose write actions, got %s", analyzeBody)
+	}
+
+	linkedSessionID := linkAlertSession(t, router, token, alertID)
+	sessionStreamBody := request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/sessions/"+linkedSessionID+"/messages/stream",
+		`{"content":"Please continue investigating this alert"}`,
+		token,
+		"application/json",
+		http.StatusOK,
+	)
+	sessionActionID := "integration_session_" + linkedSessionID + "_status"
+	if !strings.Contains(sessionStreamBody, sessionActionID) || !strings.Contains(sessionStreamBody, `"pending_actions"`) {
+		t.Fatalf("expected session center to expose pending write action, got %s", sessionStreamBody)
+	}
+
+	actionID := sessionActionID
+	confirmBody := request(t, router, http.MethodPost, "/api/v1/agent-actions/"+actionID+"/confirm", "", token, "application/json", http.StatusOK)
+	if !strings.Contains(confirmBody, `"status":"executed"`) {
+		t.Fatalf("expected executed agent action, got %s", confirmBody)
+	}
+	if !strings.Contains(confirmBody, "follow-up after confirmed update_alert_status") {
+		t.Fatalf("expected confirm to trigger follow-up agent analysis, got %s", confirmBody)
+	}
+	detailBody := request(t, router, http.MethodGet, "/api/v1/alerts/"+alertID, "", token, "", http.StatusOK)
+	if !strings.Contains(detailBody, "follow-up after confirmed update_alert_status") || !strings.Contains(detailBody, `"phase":"observe"`) {
+		t.Fatalf("expected persisted follow-up agent analysis, got %s", detailBody)
 	}
 
 	toolBody := request(t, router, http.MethodPost, "/api/v1/tools/knowledge_search/call", `{"parameters":{"query":"user-service error ratio increased","limit":2}}`, token, "application/json", http.StatusOK)
 	if !strings.Contains(toolBody, `"answer"`) {
 		t.Fatalf("expected tool result with answer, got %s", toolBody)
+	}
+
+	internalToolBody := requestWithHeaders(
+		t,
+		router,
+		http.MethodPost,
+		"/internal/ai/tools/service_status/call",
+		`{"user_id":"user-admin","user_roles":["admin"],"parameters":{"service":"user-service","environment":"prod"}}`,
+		map[string]string{
+			"Content-Type":            "application/json",
+			"X-OnCall-Runtime-Secret": "integration-runtime-secret",
+		},
+		http.StatusOK,
+	)
+	if !strings.Contains(internalToolBody, `"service":"user-service"`) {
+		t.Fatalf("expected internal tool execution result, got %s", internalToolBody)
 	}
 
 	auditStatsBody := request(t, router, http.MethodGet, "/api/v1/audit/stats", "", token, "", http.StatusOK)
@@ -102,30 +189,29 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 		t.Fatalf("expected audit logs to include auth and tool records, got %s", auditLogsBody)
 	}
 
-	restartedRouter := New(config.Config{
-		App: config.AppConfig{
-			Name:     "go-api",
-			Env:      "test",
-			LogLevel: "ERROR",
-		},
-		MySQL: config.MySQLConfig{
-			Enabled:     true,
-			Driver:      "sqlite",
-			DSN:         filepath.Join(tempRoot, "integration.db"),
-			PingTimeout: time.Second,
-			AutoMigrate: true,
-		},
-		AI: config.AIConfig{
-			HTTPBaseURL: "http://127.0.0.1:65535",
-			HTTPTimeout: 100 * time.Millisecond,
-			GRPCTarget:  "127.0.0.1:50051",
-			PingTimeout: time.Second,
-		},
-		Auth: config.AuthConfig{
-			JWTSecret:      "integration-secret",
-			TokenExpiresIn: 24 * time.Hour,
-		},
-	}, logger.New("ERROR"))
+	fallbackRouter := New(newIntegrationConfig(tempRoot, "127.0.0.1:65535"), logger.New("ERROR"))
+	fallbackToken := loginAndGetToken(t, fallbackRouter)
+	fallbackAnalyzeBody := request(
+		t,
+		fallbackRouter,
+		http.MethodPost,
+		"/api/v1/alerts/"+alertID+"/analyze",
+		"",
+		fallbackToken,
+		"application/json",
+		http.StatusOK,
+	)
+	if !strings.Contains(fallbackAnalyzeBody, `"status":"failed"`) {
+		t.Fatalf("expected degraded fallback analysis result, got %s", fallbackAnalyzeBody)
+	}
+	if !strings.Contains(fallbackAnalyzeBody, `"workflow":"go_fallback_rule_analysis"`) {
+		t.Fatalf("expected fallback workflow in analysis result, got %s", fallbackAnalyzeBody)
+	}
+	if !strings.Contains(fallbackAnalyzeBody, `"source":"go-fallback-analyzer"`) {
+		t.Fatalf("expected fallback source in analysis result, got %s", fallbackAnalyzeBody)
+	}
+
+	restartedRouter := New(newIntegrationConfig(tempRoot, runtimeTarget), logger.New("ERROR"))
 
 	restartedToken := loginAndGetToken(t, restartedRouter)
 	sessionsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/sessions", "", restartedToken, "", http.StatusOK)
@@ -147,6 +233,194 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	restartedAuditLogsBody := request(t, restartedRouter, http.MethodGet, "/api/v1/audit/logs?limit=20", "", restartedToken, "", http.StatusOK)
 	if !strings.Contains(restartedAuditLogsBody, `"category":"tool"`) {
 		t.Fatalf("expected persisted audit logs after restart, got %s", restartedAuditLogsBody)
+	}
+}
+
+func newIntegrationConfig(tempRoot, grpcTarget string) config.Config {
+	return config.Config{
+		App: config.AppConfig{
+			Name:     "go-api",
+			Env:      "test",
+			LogLevel: "ERROR",
+		},
+		MySQL: config.MySQLConfig{
+			Enabled:     true,
+			Driver:      "sqlite",
+			DSN:         filepath.Join(tempRoot, "integration.db"),
+			PingTimeout: time.Second,
+			AutoMigrate: true,
+		},
+		AI: config.AIConfig{
+			HTTPBaseURL:         "http://127.0.0.1:65535",
+			HTTPTimeout:         100 * time.Millisecond,
+			GRPCTarget:          grpcTarget,
+			PingTimeout:         time.Second,
+			RuntimeSharedSecret: "integration-runtime-secret",
+		},
+		Auth: config.AuthConfig{
+			JWTSecret:      "integration-secret",
+			TokenExpiresIn: 24 * time.Hour,
+		},
+	}
+}
+
+type fakeRuntimeService struct {
+	aipb.UnimplementedRuntimeServiceServer
+}
+
+func (fakeRuntimeService) AnalyzeAlert(_ context.Context, request *aipb.AnalyzeAlertRequest) (*aipb.AnalyzeAlertResponse, error) {
+	if observations := request.GetActionObservations(); len(observations) > 0 {
+		return &aipb.AnalyzeAlertResponse{
+			Status:             "ready",
+			Summary:            "follow-up after confirmed " + observations[0].GetActionType(),
+			SeverityAssessment: "confirmed action was observed and the agent replanned",
+			SuggestedActions:   []string{"Continue investigation from confirmed action result."},
+			Workflow:           "autonomous_plan_react_alert_analysis",
+			Confidence:         0.9,
+			Source:             "python-ai-runtime-autonomous-agent",
+			GeneratedAt:        "2026-04-09T10:01:00Z",
+			AgentPlan: []*aipb.AgentPlanStep{
+				{StepId: "step-1", Phase: "observe", Description: "Observe confirmed agent action.", Observation: observations[0].GetResultJson(), Status: "completed"},
+				{StepId: "step-2", Phase: "reflect", Description: "Replan after confirmed action.", Status: "completed"},
+			},
+		}, nil
+	}
+
+	return &aipb.AnalyzeAlertResponse{
+		Status:             "ready",
+		Summary:            "runtime analyzed " + request.GetService(),
+		SeverityAssessment: "runtime severity assessment for " + request.GetSeverity(),
+		PossibleCauses: []string{
+			"Recent release may have increased errors.",
+		},
+		SuggestedActions: []string{
+			"Check service_status and verify recent deploys.",
+		},
+		RecommendedTools: []string{"knowledge_search", "service_status"},
+		KnowledgeQueries: []string{request.GetService() + " " + request.GetTitle()},
+		ToolCalls: []*aipb.ToolCall{
+			{Name: "service_status", ArgumentsJson: `{"service":"user-service","environment":"staging"}`, Outcome: "success", Summary: "user-service is degraded in staging"},
+		},
+		Workflow:    "router_alert_analysis",
+		Confidence:  0.92,
+		Source:      "python-ai-runtime-router-alert-graph",
+		GeneratedAt: "2026-04-09T10:00:00Z",
+		Trace: []*aipb.TraceEvent{
+			{Stage: "router", Message: "alert route selected", Severity: "info"},
+			{Stage: "tool", Message: "executed service_status", Severity: "info"},
+			{Stage: "alert_analysis", Message: "generated structured alert analysis", Severity: "info"},
+		},
+		PendingActions: []*aipb.PendingAgentAction{
+			{
+				ActionId:      "integration_" + request.GetAlertId() + "_status",
+				ActionType:    "update_alert_status",
+				Status:        "pending",
+				Title:         "Move alert to investigating",
+				Description:   "Runtime suggested active investigation.",
+				ArgumentsJson: `{"alert_id":"` + request.GetAlertId() + `","status":"investigating","comment":"Runtime suggested active investigation."}`,
+				RiskLevel:     "medium",
+			},
+		},
+	}, nil
+}
+
+func (fakeRuntimeService) RunConversationTurn(
+	_ context.Context,
+	request *aipb.RunConversationTurnRequest,
+) (*aipb.RunConversationTurnResponse, error) {
+	if strings.Contains(strings.ToLower(request.GetMessage()), "tool") {
+		return &aipb.RunConversationTurnResponse{
+			Answer: "tool result for " + request.GetMessage(),
+			ToolCalls: []*aipb.ToolCall{
+				{
+					Name:          "service_status",
+					ArgumentsJson: `{"service":"user-service"}`,
+					Outcome:       "success",
+					Summary:       "user-service is degraded in prod",
+				},
+			},
+			Route:  "tool",
+			Status: "ready",
+			Trace: []*aipb.TraceEvent{
+				{Stage: "router", Message: "tool route selected", Severity: "info"},
+				{Stage: "tool", Message: "executed service_status", Severity: "info"},
+			},
+		}, nil
+	}
+
+	if request.GetLinkedAlert().GetAlertId() != "" {
+		return &aipb.RunConversationTurnResponse{
+			Answer: "session follow-up for " + request.GetLinkedAlert().GetAlertId(),
+			Route:  "alert_analysis",
+			Status: "ready",
+			AgentPlan: []*aipb.AgentPlanStep{
+				{StepId: "step-1", Phase: "plan", Description: "Plan session-scoped alert action.", Status: "completed"},
+			},
+			PendingActions: []*aipb.PendingAgentAction{
+				{
+					ActionId:      "integration_session_" + request.GetSessionId() + "_status",
+					ActionType:    "update_alert_status",
+					Status:        "pending",
+					Title:         "Move alert to investigating",
+					Description:   "Session center write action.",
+					ArgumentsJson: `{"alert_id":"` + request.GetLinkedAlert().GetAlertId() + `","status":"investigating","comment":"Session center confirmed investigation."}`,
+					RiskLevel:     "medium",
+				},
+			},
+			Trace: []*aipb.TraceEvent{
+				{Stage: "router", Message: "linked alert route selected", Severity: "info"},
+			},
+		}, nil
+	}
+
+	return &aipb.RunConversationTurnResponse{
+		Answer: "runtime answer for " + request.GetMessage(),
+		Citations: []*aipb.Citation{
+			{
+				Source:     "runbook",
+				Title:      "User Service Runbook",
+				Snippet:    "Check recent deploys and compare dependency error spikes before rollback.",
+				DocumentId: "doc-user-service-runbook",
+				Score:      0.93,
+			},
+		},
+		Route:  "chat_qa",
+		Status: "ready",
+		Trace: []*aipb.TraceEvent{
+			{Stage: "router", Message: "chat route selected", Severity: "info"},
+			{Stage: "chat_qa", Message: "answered with knowledge citations", Severity: "info"},
+		},
+	}, nil
+}
+
+func (fakeRuntimeService) Health(_ context.Context, _ *aipb.HealthRequest) (*aipb.HealthResponse, error) {
+	return &aipb.HealthResponse{
+		Status:  "ok",
+		Version: "test",
+		Service: "fake-runtime",
+	}, nil
+}
+
+func startRuntimeServer(t *testing.T) (string, func()) {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := grpc.NewServer()
+	aipb.RegisterRuntimeServiceServer(server, fakeRuntimeService{})
+
+	go func() {
+		if serveErr := server.Serve(listener); serveErr != nil {
+			t.Logf("runtime test server stopped: %v", serveErr)
+		}
+	}()
+
+	return listener.Addr().String(), func() {
+		server.Stop()
+		_ = listener.Close()
 	}
 }
 
@@ -188,6 +462,24 @@ func createSession(t *testing.T, router *gin.Engine, token, title string) string
 	return payload.Data.Session.ID
 }
 
+func linkAlertSession(t *testing.T, router *gin.Engine, token, alertID string) string {
+	t.Helper()
+
+	body := request(t, router, http.MethodPost, "/api/v1/alerts/"+alertID+"/session", "", token, "application/json", http.StatusOK)
+	var payload envelope[struct {
+		Alert struct {
+			LinkedSessionID string `json:"linked_session_id"`
+		} `json:"alert"`
+	}]
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.Alert.LinkedSessionID == "" {
+		t.Fatalf("expected linked session id, got %s", body)
+	}
+	return payload.Data.Alert.LinkedSessionID
+}
+
 func uploadKnowledgeDocument(t *testing.T, router *gin.Engine, token, title, category, content string) {
 	t.Helper()
 
@@ -224,6 +516,33 @@ func waitForKnowledgeReady(t *testing.T, router *gin.Engine, token string) {
 	}
 
 	t.Fatal("knowledge document did not become ready in time")
+}
+
+func assertPendingActionStatus(t *testing.T, body, actionID, expectedStatus string) {
+	t.Helper()
+
+	var payload envelope[struct {
+		Alert struct {
+			Analysis struct {
+				PendingActions []struct {
+					ActionID string `json:"action_id"`
+					Status   string `json:"status"`
+				} `json:"pending_actions"`
+			} `json:"analysis"`
+		} `json:"alert"`
+	}]
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range payload.Data.Alert.Analysis.PendingActions {
+		if action.ActionID == actionID {
+			if action.Status != expectedStatus {
+				t.Fatalf("expected action %s status %s, got %s in %s", actionID, expectedStatus, action.Status, body)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected action %s in %s", actionID, body)
 }
 
 func firstAlertID(t *testing.T, router *gin.Engine, token string) string {
@@ -268,6 +587,33 @@ func request(t *testing.T, router *gin.Engine, method, path, body, token, conten
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
+	if recorder.Code != expectedStatus {
+		t.Fatalf("%s %s expected %d got %d: %s", method, path, expectedStatus, recorder.Code, recorder.Body.String())
+	}
+	return recorder.Body.String()
+}
+
+func requestWithHeaders(
+	t *testing.T,
+	router *gin.Engine,
+	method, path, body string,
+	headers map[string]string,
+	expectedStatus int,
+) string {
+	t.Helper()
+
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+
+	req := httptest.NewRequest(method, path, reader)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
 	if recorder.Code != expectedStatus {
 		t.Fatalf("%s %s expected %d got %d: %s", method, path, expectedStatus, recorder.Code, recorder.Body.String())
 	}

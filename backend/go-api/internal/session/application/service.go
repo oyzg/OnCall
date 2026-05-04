@@ -285,7 +285,16 @@ func (s *Service) StartAssistantReply(user authDomain.User, sessionID, content s
 	return assistantMessage, true
 }
 
-func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messageID, content string, references []domain.Reference) bool {
+func (s *Service) CompleteAssistantReply(
+	user authDomain.User,
+	sessionID, messageID, content string,
+	references []domain.Reference,
+	route string,
+	toolCalls []domain.ToolCall,
+	trace []domain.TraceEvent,
+	agentPlan []domain.AgentPlanStep,
+	pendingActions []domain.PendingAgentAction,
+) bool {
 	if s.repo != nil {
 		sessions, err := s.repo.ListSessionsByUser(context.Background(), user.ID, "", 0)
 		if err != nil {
@@ -314,6 +323,11 @@ func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messag
 			}
 			page.Messages[index].Content = content
 			page.Messages[index].Status = "completed"
+			page.Messages[index].Route = route
+			page.Messages[index].ToolCalls = toolCalls
+			page.Messages[index].Trace = trace
+			page.Messages[index].AgentPlan = agentPlan
+			page.Messages[index].PendingActions = pendingActions
 			page.Messages[index].References = references
 			break
 		}
@@ -343,6 +357,11 @@ func (s *Service) CompleteAssistantReply(user authDomain.User, sessionID, messag
 		}
 		messages[index].Content = content
 		messages[index].Status = "completed"
+		messages[index].Route = route
+		messages[index].ToolCalls = toolCalls
+		messages[index].Trace = trace
+		messages[index].AgentPlan = agentPlan
+		messages[index].PendingActions = pendingActions
 		messages[index].References = references
 		break
 	}

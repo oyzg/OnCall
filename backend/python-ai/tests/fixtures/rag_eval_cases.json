@@ -1,0 +1,44 @@
+{
+  "documents": [
+    {
+      "document_id": "doc_payment",
+      "document_title": "Payment API Runbook",
+      "category": "runbook",
+      "content": "payment-api p95 latency spike often indicates downstream timeout or dependency slowdown. Check service status, dependency latency, and recent releases first."
+    },
+    {
+      "document_id": "doc_db",
+      "document_title": "Database Troubleshooting SOP",
+      "category": "runbook",
+      "content": "mysql connection pool saturation and slow queries can cause database timeout, connection exhaustion, and cascading latency."
+    },
+    {
+      "document_id": "doc_user",
+      "document_title": "User Service Error Guide",
+      "category": "incident",
+      "content": "user-service 5xx ratio usually increases after bad release, dependency exception, or upstream auth failure. Check logs and rollback history."
+    }
+  ],
+  "queries": [
+    {
+      "query": "payment-api p95 timeout",
+      "category": "runbook",
+      "expected_title": "Payment API Runbook"
+    },
+    {
+      "query": "支付服务卡了",
+      "category": "runbook",
+      "expected_title": "Payment API Runbook"
+    },
+    {
+      "query": "mysql 连接池耗尽",
+      "category": "runbook",
+      "expected_title": "Database Troubleshooting SOP"
+    },
+    {
+      "query": "登录接口 5xx",
+      "category": "incident",
+      "expected_title": "User Service Error Guide"
+    }
+  ]
+}

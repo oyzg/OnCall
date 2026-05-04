@@ -33,3 +33,21 @@ type AlertHandlingRecord struct {
 
 func (Alert) TableName() string               { return "alerts" }
 func (AlertHandlingRecord) TableName() string { return "alert_handling_records" }
+
+type AgentAction struct {
+	ID            string     `gorm:"primaryKey;size:128"`
+	SourceType    string     `gorm:"index:idx_agent_action_source,priority:1;size:32;not null"`
+	SourceID      string     `gorm:"index:idx_agent_action_source,priority:2;size:128;not null"`
+	ActionType    string     `gorm:"index;size:64;not null"`
+	Status        string     `gorm:"index;size:32;not null"`
+	Title         string     `gorm:"size:255;not null"`
+	Description   string     `gorm:"type:text"`
+	ArgumentsJSON string     `gorm:"type:longtext;not null"`
+	RiskLevel     string     `gorm:"size:32;not null"`
+	ResultJSON    string     `gorm:"type:longtext"`
+	Error         string     `gorm:"type:text"`
+	CreatedAt     time.Time  `gorm:"not null"`
+	ExecutedAt    *time.Time `gorm:"index"`
+}
+
+func (AgentAction) TableName() string { return "agent_actions" }

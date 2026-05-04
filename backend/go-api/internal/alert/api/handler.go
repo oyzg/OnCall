@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	agentActionApp "github.com/oyzg/OnCall/backend/go-api/internal/agentaction/application"
 	alertApp "github.com/oyzg/OnCall/backend/go-api/internal/alert/application"
+	alertDomain "github.com/oyzg/OnCall/backend/go-api/internal/alert/domain"
 	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
@@ -15,8 +17,9 @@ import (
 )
 
 type Handler struct {
-	service *alertApp.Service
-	audit   *auditApp.Service
+	service      *alertApp.Service
+	audit        *auditApp.Service
+	agentActions *agentActionApp.Service
 }
 
 type ingestRequest struct {
@@ -35,8 +38,8 @@ type updateStatusRequest struct {
 	Comment string `json:"comment"`
 }
 
-func NewHandler(service *alertApp.Service, auditService *auditApp.Service) *Handler {
-	return &Handler{service: service, audit: auditService}
+func NewHandler(service *alertApp.Service, auditService *auditApp.Service, agentActionService *agentActionApp.Service) *Handler {
+	return &Handler{service: service, audit: auditService, agentActions: agentActionService}
 }
 
 func (h *Handler) Ingest(c *gin.Context) {
@@ -81,6 +84,7 @@ func (h *Handler) ListAlerts(c *gin.Context) {
 		strings.TrimSpace(c.Query("service")),
 		strings.TrimSpace(c.Query("query")),
 	)
+	h.hydrateAlertActions(c, items)
 	response.Success(c.Writer, http.StatusOK, requestID(c), gin.H{
 		"alerts": items,
 		"stats":  h.service.BuildStats(),
@@ -100,6 +104,7 @@ func (h *Handler) GetDetail(c *gin.Context) {
 		return
 	}
 
+	h.hydrateDetailActions(c, &detail)
 	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
 }
 
@@ -166,8 +171,48 @@ func (h *Handler) Analyze(c *gin.Context) {
 		"analysis_status": detail.Alert.Analysis.Status,
 		"analysis_source": detail.Alert.Analysis.Source,
 	})
+	h.persistPendingActions(c, detail.Alert.ID, detail.Alert.Analysis.PendingActions)
+	h.hydrateDetailActions(c, &detail)
 
 	response.Success(c.Writer, http.StatusOK, requestID(c), detail)
+}
+
+func (h *Handler) persistPendingActions(c *gin.Context, alertID string, actions []alertDomain.PendingAgentAction) {
+	if h.agentActions == nil || len(actions) == 0 {
+		return
+	}
+	for _, action := range actions {
+		_, _ = h.agentActions.Create(c.Request.Context(), agentActionApp.CreateInput{
+			ID:            action.ActionID,
+			SourceType:    "alert",
+			SourceID:      alertID,
+			ActionType:    action.ActionType,
+			Title:         action.Title,
+			Description:   action.Description,
+			ArgumentsJSON: action.ArgumentsJSON,
+			RiskLevel:     action.RiskLevel,
+		})
+	}
+}
+
+func (h *Handler) hydrateDetailActions(c *gin.Context, detail *alertApp.Detail) {
+	if detail == nil {
+		return
+	}
+	h.hydrateAlertAction(c, &detail.Alert)
+}
+
+func (h *Handler) hydrateAlertActions(c *gin.Context, alerts []alertDomain.Alert) {
+	for index := range alerts {
+		h.hydrateAlertAction(c, &alerts[index])
+	}
+}
+
+func (h *Handler) hydrateAlertAction(c *gin.Context, alert *alertDomain.Alert) {
+	if alert == nil || alert.Analysis == nil {
+		return
+	}
+	alert.Analysis.PendingActions = nil
 }
 
 func currentUser(c *gin.Context) (authDomain.User, bool) {

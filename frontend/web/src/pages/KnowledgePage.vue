@@ -124,6 +124,11 @@
               {{ formatTime(row.updated_at) }}
             </template>
           </el-table-column>
+          <el-table-column label="索引" width="150">
+            <template #default="{ row }">
+              <el-tag :type="indexTagType(row.index_status)">{{ describeIndexState(row) }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="{ row }">
               <div class="row-actions">
@@ -148,7 +153,7 @@
       <div class="section-heading">
         <div>
           <h2>检索测试</h2>
-          <p>阶段 7 先用文本检索跑通 RAG 链路，后续再切到 Embedding + Milvus/ES 混合检索。</p>
+          <p>当前使用查询改写 + Elasticsearch 词法召回 + Milvus 语义召回 + 融合重排的混合检索。</p>
         </div>
         <el-button type="primary" :loading="searching" @click="handleSearch">开始检索</el-button>
       </div>
@@ -186,10 +191,19 @@
             <el-card shadow="never" class="search-metrics-card">
               <template #header>检索诊断</template>
               <div class="search-metrics">
+                <span>改写查询：{{ searchResult.rewritten_query || "-" }}</span>
+                <span>查询词：{{ formatTerms(searchResult.query_terms) }}</span>
+                <span>扩展词：{{ formatTerms(searchResult.expanded_terms) }}</span>
                 <span>扫描文档：{{ searchResult.scanned_docs }}</span>
                 <span>扫描切片：{{ searchResult.scanned_chunks }}</span>
                 <span>命中切片：{{ searchResult.matched_chunks }}</span>
+                <span>词法候选：{{ searchResult.lexical_candidates }}</span>
+                <span>语义候选：{{ searchResult.semantic_candidates }}</span>
+                <span>重排结果：{{ searchResult.reranked_chunks }}</span>
                 <span>策略：{{ searchResult.strategy }}</span>
+                <span>Embedding：{{ searchResult.embedding_backend || "-" }}</span>
+                <span>向量：{{ searchResult.vector_backend || "-" }}</span>
+                <span>检索：{{ searchResult.lexical_backend || "-" }}</span>
               </div>
             </el-card>
 
@@ -204,6 +218,14 @@
                   <span>{{ reference.category }} · {{ reference.score.toFixed(2) }}</span>
                 </header>
                 <p>{{ reference.chunk }}</p>
+                <footer class="retrieval-meta">
+                  <span>词法 {{ formatScore(reference.lexical_score) }}</span>
+                  <span>语义 {{ formatScore(reference.semantic_score) }}</span>
+                  <span>增强 {{ formatScore(reference.boost_score) }}</span>
+                  <span v-if="reference.match_reasons?.length">
+                    原因：{{ reference.match_reasons.join(" / ") }}
+                  </span>
+                </footer>
               </article>
             </div>
           </template>
@@ -225,6 +247,21 @@
           <el-descriptions-item label="存储路径">{{ activeDocument.storage_path }}</el-descriptions-item>
           <el-descriptions-item label="大小">{{ formatSize(activeDocument.size_bytes) }}</el-descriptions-item>
           <el-descriptions-item label="切片数">{{ activeDocument.chunk_count }}</el-descriptions-item>
+          <el-descriptions-item label="索引状态">
+            {{ describeIndexState(activeDocument) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="Embedding">
+            {{ activeDocument.embedding_backend || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="向量后端">
+            {{ activeDocument.vector_backend || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="检索后端">
+            {{ activeDocument.lexical_backend || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="索引完成">
+            {{ activeDocument.indexed_at ? formatTime(activeDocument.indexed_at) : "-" }}
+          </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatTime(activeDocument.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="处理完成">
             {{ activeDocument.processed_at ? formatTime(activeDocument.processed_at) : "-" }}
@@ -247,6 +284,9 @@
           </el-descriptions-item>
           <el-descriptions-item v-if="activeDocument.failure_reason" label="失败原因">
             {{ activeDocument.failure_reason }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="activeDocument.index_error" label="索引错误">
+            {{ activeDocument.index_error }}
           </el-descriptions-item>
         </el-descriptions>
       </template>
@@ -444,6 +484,45 @@ function statusTagType(status: KnowledgeDocument["status"]) {
   return "info";
 }
 
+function indexTagType(status?: string) {
+  if (status === "indexed") {
+    return "success";
+  }
+  if (status === "failed") {
+    return "danger";
+  }
+  return "info";
+}
+
+function describeIndexState(document: Pick<KnowledgeDocument, "index_status" | "embedding_backend" | "vector_backend" | "lexical_backend" | "index_error">) {
+  if (document.index_status === "failed") {
+    return "索引失败";
+  }
+  if (document.index_status !== "indexed") {
+    return "未建立";
+  }
+
+  const fullHybrid =
+    document.vector_backend === "milvus" &&
+    document.lexical_backend === "elasticsearch" &&
+    document.embedding_backend &&
+    document.embedding_backend !== "hash_fallback";
+
+  if (fullHybrid) {
+    return "完整混合索引";
+  }
+
+  if (document.index_error) {
+    return "部分降级";
+  }
+
+  if (document.vector_backend === "local_fallback" || document.lexical_backend === "local_fallback" || document.embedding_backend === "hash_fallback") {
+    return "部分降级";
+  }
+
+  return "已建立";
+}
+
 function formatTime(value?: string) {
   if (!value) {
     return "-";
@@ -468,6 +547,14 @@ function formatSize(size: number) {
     return `${(size / 1024).toFixed(1)} KB`;
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatScore(value?: number) {
+  return typeof value === "number" ? value.toFixed(2) : "-";
+}
+
+function formatTerms(items?: string[]) {
+  return items?.length ? items.join(" / ") : "-";
 }
 </script>
 
@@ -639,6 +726,15 @@ function formatSize(size: number) {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 8px;
+}
+
+.retrieval-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 12px;
 }
 
 @media (max-width: 1100px) {

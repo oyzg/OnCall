@@ -18,9 +18,15 @@ type Document struct {
 	ChunkPreviews []string   `json:"chunk_previews"`
 	FailureReason string     `json:"failure_reason,omitempty"`
 	ChunkCount    int        `json:"chunk_count"`
+	IndexStatus   string     `json:"index_status,omitempty"`
+	EmbeddingBackend string  `json:"embedding_backend,omitempty"`
+	VectorBackend string     `json:"vector_backend,omitempty"`
+	LexicalBackend string    `json:"lexical_backend,omitempty"`
+	IndexError    string     `json:"index_error,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	ProcessedAt   *time.Time `json:"processed_at,omitempty"`
+	IndexedAt     *time.Time `json:"indexed_at,omitempty"`
 }
 
 type Reference struct {

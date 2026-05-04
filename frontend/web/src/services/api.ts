@@ -47,8 +47,63 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   status: "streaming" | "completed" | "failed";
+  route?: string;
+  tool_calls?: ChatToolCall[];
+  trace?: ChatTraceEvent[];
+  agent_plan?: AgentPlanStep[];
+  pending_actions?: PendingAgentAction[];
   references?: MessageReference[];
   created_at: string;
+}
+
+export interface ChatToolCall {
+  name: string;
+  arguments_json?: string;
+  outcome?: string;
+  summary?: string;
+}
+
+export interface ChatTraceEvent {
+  stage: string;
+  message: string;
+  severity?: string;
+  timestamp?: string;
+  tags?: string[];
+}
+
+export interface AgentPlanStep {
+  step_id?: string;
+  phase?: string;
+  description?: string;
+  tool_name?: string;
+  observation?: string;
+  status?: string;
+}
+
+export interface PendingAgentAction {
+  action_id: string;
+  action_type: string;
+  status: "pending" | "executed" | "failed";
+  title: string;
+  description?: string;
+  arguments_json?: string;
+  risk_level?: "low" | "medium" | "high";
+}
+
+export interface AgentActionRecord {
+  id: string;
+  source_type: string;
+  source_id: string;
+  action_type: string;
+  status: "pending" | "executed" | "failed";
+  title: string;
+  description?: string;
+  arguments_json?: string;
+  risk_level?: "low" | "medium" | "high";
+  result_json?: string;
+  error?: string;
+  created_at: string;
+  executed_at?: string;
 }
 
 export interface ChatMessagePage {
@@ -82,9 +137,28 @@ export interface KnowledgeDocument {
   chunk_previews: string[];
   failure_reason?: string;
   chunk_count: number;
+  index_status?: string;
+  embedding_backend?: string;
+  vector_backend?: string;
+  lexical_backend?: string;
+  index_error?: string;
   created_at: string;
   updated_at: string;
   processed_at?: string;
+  indexed_at?: string;
+}
+
+export interface HealthComponent {
+  name: string;
+  status: string;
+  detail?: string;
+}
+
+export interface PythonHealthReport {
+  service: string;
+  env: string;
+  status: string;
+  components: HealthComponent[];
 }
 
 export interface RetrievalReference {
@@ -94,17 +168,30 @@ export interface RetrievalReference {
   chunk_index?: number;
   chunk: string;
   score: number;
+  lexical_score?: number;
+  semantic_score?: number;
+  boost_score?: number;
+  match_reasons?: string[];
 }
 
 export interface RetrievalReport {
   query: string;
+  rewritten_query: string;
+  query_terms: string[];
+  expanded_terms: string[];
   answer: string;
   references: RetrievalReference[];
   scanned_docs: number;
   scanned_chunks: number;
   matched_chunks: number;
+  lexical_candidates: number;
+  semantic_candidates: number;
+  reranked_chunks: number;
   strategy: string;
   requested_limit: number;
+  embedding_backend?: string;
+  vector_backend?: string;
+  lexical_backend?: string;
 }
 
 export interface AlertItem {
@@ -154,11 +241,15 @@ export interface AlertAnalysis {
   suggested_actions: string[];
   recommended_tools: string[];
   knowledge_queries: string[];
+  tool_calls?: ChatToolCall[];
   workflow: string;
   confidence: string;
   source: string;
   generated_at: string;
   error?: string;
+  trace?: ChatTraceEvent[];
+  agent_plan?: AgentPlanStep[];
+  pending_actions?: PendingAgentAction[];
 }
 
 export interface ToolParameter {
@@ -268,6 +359,11 @@ export async function streamSessionMessage(
     onDone?: (payload: {
       message_id: string;
       content: string;
+      route?: string;
+      tool_calls?: ChatToolCall[];
+      trace?: ChatTraceEvent[];
+      agent_plan?: AgentPlanStep[];
+      pending_actions?: PendingAgentAction[];
       references?: MessageReference[];
     }) => void;
   }
@@ -328,6 +424,11 @@ function parseSSEEvent(
     onDone?: (payload: {
       message_id: string;
       content: string;
+      route?: string;
+      tool_calls?: ChatToolCall[];
+      trace?: ChatTraceEvent[];
+      agent_plan?: AgentPlanStep[];
+      pending_actions?: PendingAgentAction[];
       references?: MessageReference[];
     }) => void;
   }
@@ -470,6 +571,15 @@ export async function linkAlertSession(alertId: string) {
 export async function analyzeAlert(alertId: string) {
   const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
     `/api/v1/alerts/${alertId}/analyze`
+  );
+  return response.data;
+}
+
+export async function confirmAgentAction(actionId: string) {
+  const response = await http.post<
+    ApiEnvelope<{ action: AgentActionRecord; alert?: AlertItem; records?: AlertRecord[]; stats?: AlertStats }>
+  >(
+    `/api/v1/agent-actions/${actionId}/confirm`
   );
   return response.data;
 }

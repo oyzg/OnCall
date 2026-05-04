@@ -9,16 +9,17 @@
       title="Python AI"
       :value="pythonHealth"
       description="FastAPI / LangChain / LangGraph 基础服务状态"
+      :details="pythonHealthDetails"
     />
     <StatusCard
       title="Knowledge"
-      value="pending"
-      description="知识库与 RAG 主链路将在后续阶段接入"
+      value="integrated"
+      description="知识库已接入 Embedding、Milvus、Elasticsearch 与本地兜底检索"
     />
     <StatusCard
       title="Alerts"
-      value="pending"
-      description="告警中心和 AI 分析闭环将在业务阶段实现"
+      value="ready"
+      description="告警中心、AI 分析和关联排障会话已经形成闭环"
     />
   </div>
 </template>
@@ -27,5 +28,5 @@
 import StatusCard from "@/components/StatusCard.vue";
 import { useHealthStatus } from "@/composables/useHealthStatus";
 
-const { goHealth, pythonHealth } = useHealthStatus();
+const { goHealth, pythonHealth, pythonHealthDetails } = useHealthStatus();
 </script>

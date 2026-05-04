@@ -44,10 +44,12 @@ type RedisConfig struct {
 }
 
 type AIConfig struct {
-	HTTPBaseURL string
-	HTTPTimeout time.Duration
-	GRPCTarget  string
-	PingTimeout time.Duration
+	HTTPBaseURL         string
+	HTTPTimeout         time.Duration
+	IndexTimeout        time.Duration
+	GRPCTarget          string
+	PingTimeout         time.Duration
+	RuntimeSharedSecret string
 }
 
 type AuthConfig struct {
@@ -81,10 +83,12 @@ func Load() Config {
 			PingTimeout: getDuration("REDIS_PING_TIMEOUT_SECONDS", 2*time.Second),
 		},
 		AI: AIConfig{
-			HTTPBaseURL: getEnv("AI_HTTP_BASE_URL", "http://127.0.0.1:8000"),
-			HTTPTimeout: getDuration("AI_HTTP_TIMEOUT_SECONDS", 8*time.Second),
-			GRPCTarget:  getEnv("GRPC_AI_TARGET", "127.0.0.1:50051"),
-			PingTimeout: getDuration("AI_GRPC_PING_TIMEOUT_SECONDS", 2*time.Second),
+			HTTPBaseURL:         getEnv("AI_HTTP_BASE_URL", "http://127.0.0.1:8000"),
+			HTTPTimeout:         getDuration("AI_HTTP_TIMEOUT_SECONDS", 8*time.Second),
+			IndexTimeout:        getDuration("AI_INDEX_TIMEOUT_SECONDS", 25*time.Second),
+			GRPCTarget:          getEnv("GRPC_AI_TARGET", "127.0.0.1:50051"),
+			PingTimeout:         getDuration("AI_GRPC_PING_TIMEOUT_SECONDS", 2*time.Second),
+			RuntimeSharedSecret: getEnv("RUNTIME_SHARED_SECRET", "oncall-runtime-secret"),
 		},
 		Auth: AuthConfig{
 			JWTSecret:      getEnv("JWT_SECRET", "oncall-dev-secret"),
