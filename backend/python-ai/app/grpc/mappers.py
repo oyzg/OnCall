@@ -48,6 +48,27 @@ class ToolCallEntry:
 
 
 @dataclass(slots=True)
+class AgentPlanStepEntry:
+    step_id: str = ""
+    phase: str = ""
+    description: str = ""
+    tool_name: str = ""
+    observation: str = ""
+    status: str = "pending"
+
+
+@dataclass(slots=True)
+class PendingAgentActionEntry:
+    action_id: str = ""
+    action_type: str = ""
+    status: str = "pending"
+    title: str = ""
+    description: str = ""
+    arguments_json: str = ""
+    risk_level: str = "low"
+
+
+@dataclass(slots=True)
 class RouterDecision:
     route: str
     reason: str
@@ -66,6 +87,8 @@ class AlertAnalysisResult:
     recommended_tools: list[str] = field(default_factory=list)
     knowledge_queries: list[str] = field(default_factory=list)
     tool_calls: list[ToolCallEntry] = field(default_factory=list)
+    agent_plan: list[AgentPlanStepEntry] = field(default_factory=list)
+    pending_actions: list[PendingAgentActionEntry] = field(default_factory=list)
     workflow: str = "alert_analysis"
     confidence: float = 0.5
     source: str = "python-ai-runtime"
@@ -80,6 +103,8 @@ class ConversationTurnResult:
     answer: str = ""
     citations: list[CitationEntry] = field(default_factory=list)
     tool_calls: list[ToolCallEntry] = field(default_factory=list)
+    agent_plan: list[AgentPlanStepEntry] = field(default_factory=list)
+    pending_actions: list[PendingAgentActionEntry] = field(default_factory=list)
     route: str = "chat_qa"
     error: str = ""
     trace: list[TraceEntry] = field(default_factory=list)
@@ -156,6 +181,29 @@ def alert_result_to_proto(result: AlertAnalysisResult) -> runtime_pb2.AnalyzeAle
             )
             for item in result.tool_calls
         ],
+        agent_plan=[
+            runtime_pb2.AgentPlanStep(
+                step_id=item.step_id,
+                phase=item.phase,
+                description=item.description,
+                tool_name=item.tool_name,
+                observation=item.observation,
+                status=item.status,
+            )
+            for item in result.agent_plan
+        ],
+        pending_actions=[
+            runtime_pb2.PendingAgentAction(
+                action_id=item.action_id,
+                action_type=item.action_type,
+                status=item.status,
+                title=item.title,
+                description=item.description,
+                arguments_json=item.arguments_json,
+                risk_level=item.risk_level,
+            )
+            for item in result.pending_actions
+        ],
         workflow=result.workflow,
         confidence=result.confidence,
         source=result.source,
@@ -187,6 +235,29 @@ def conversation_result_to_proto(result: ConversationTurnResult) -> runtime_pb2.
                 summary=item.summary,
             )
             for item in result.tool_calls
+        ],
+        agent_plan=[
+            runtime_pb2.AgentPlanStep(
+                step_id=item.step_id,
+                phase=item.phase,
+                description=item.description,
+                tool_name=item.tool_name,
+                observation=item.observation,
+                status=item.status,
+            )
+            for item in result.agent_plan
+        ],
+        pending_actions=[
+            runtime_pb2.PendingAgentAction(
+                action_id=item.action_id,
+                action_type=item.action_type,
+                status=item.status,
+                title=item.title,
+                description=item.description,
+                arguments_json=item.arguments_json,
+                risk_level=item.risk_level,
+            )
+            for item in result.pending_actions
         ],
         route=result.route,
         status=result.status,

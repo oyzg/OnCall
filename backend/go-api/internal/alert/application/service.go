@@ -239,6 +239,34 @@ func (s *Service) GetDetail(alertID string) (Detail, bool) {
 	}, true
 }
 
+func (s *Service) FindByLinkedSession(sessionID string) (alertDomain.Alert, bool) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return alertDomain.Alert{}, false
+	}
+	if s.repo != nil {
+		items, err := s.repo.ListAlerts(context.Background(), "", "", "", "")
+		if err != nil {
+			return alertDomain.Alert{}, false
+		}
+		for _, alert := range items {
+			if alert.LinkedSessionID == sessionID {
+				return alert, true
+			}
+		}
+		return alertDomain.Alert{}, false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, alert := range s.alerts {
+		if alert.LinkedSessionID == sessionID {
+			return alert, true
+		}
+	}
+	return alertDomain.Alert{}, false
+}
+
 func (s *Service) UpdateStatus(user authDomain.User, alertID string, input UpdateStatusInput) (Detail, bool) {
 	if s.repo != nil {
 		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
@@ -340,22 +368,68 @@ func (s *Service) LinkSession(user authDomain.User, alertID string) (Detail, boo
 	return s.detailLocked(alertID), true
 }
 
-func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
+func (s *Service) AppendRecord(user authDomain.User, alertID, comment string) (Detail, bool) {
+	comment = strings.TrimSpace(comment)
+	if comment == "" {
+		comment = "Agent action confirmed."
+	}
 	if s.repo != nil {
 		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
 		if err != nil || !ok {
 			return Detail{}, false
 		}
-		analysis := alertDomain.AlertAnalysis{
-			Status:      "failed",
-			Summary:     "当前分析器未初始化，无法生成告警分析结果。",
-			Source:      "go-alert-service",
-			GeneratedAt: time.Now(),
-			Error:       "analyzer unavailable",
+		record := alertDomain.HandlingRecord{
+			ID:        nextID("record"),
+			AlertID:   alertID,
+			Action:    "agent_note",
+			Operator:  displayOperator(user),
+			Comment:   comment,
+			CreatedAt: time.Now(),
 		}
-		if s.analyzer != nil {
-			analysis = s.analyzer.AnalyzeAlert(context.Background(), user, alert)
+		alert.UpdatedAt = time.Now()
+		if err := s.repo.SaveAlertWithRecord(context.Background(), alert, record); err != nil {
+			return Detail{}, false
 		}
+		return s.GetDetail(alertID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	alert, ok := s.alerts[alertID]
+	if !ok {
+		return Detail{}, false
+	}
+	alert.UpdatedAt = time.Now()
+	s.alerts[alertID] = alert
+	s.records[alertID] = append(s.records[alertID], alertDomain.HandlingRecord{
+		ID:        nextID("record"),
+		AlertID:   alertID,
+		Action:    "agent_note",
+		Operator:  displayOperator(user),
+		Comment:   comment,
+		CreatedAt: time.Now(),
+	})
+	s.persistLocked()
+
+	return s.detailLocked(alertID), true
+}
+
+func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
+	return s.AnalyzeWithActionObservations(user, alertID, nil)
+}
+
+func (s *Service) AnalyzeWithActionObservations(
+	user authDomain.User,
+	alertID string,
+	observations []alertDomain.AgentActionObservation,
+) (Detail, bool) {
+	if s.repo != nil {
+		alert, ok, err := s.repo.GetAlert(context.Background(), alertID)
+		if err != nil || !ok {
+			return Detail{}, false
+		}
+		analysis := s.runAnalyzer(user, alert, observations)
 		alert.Analysis = &analysis
 		alert.UpdatedAt = time.Now()
 		record := alertDomain.HandlingRecord{
@@ -380,16 +454,7 @@ func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
 	}
 	s.mu.Unlock()
 
-	analysis := alertDomain.AlertAnalysis{
-		Status:      "failed",
-		Summary:     "当前分析器未初始化，无法生成告警分析结果。",
-		Source:      "go-alert-service",
-		GeneratedAt: time.Now(),
-		Error:       "analyzer unavailable",
-	}
-	if s.analyzer != nil {
-		analysis = s.analyzer.AnalyzeAlert(context.Background(), user, alert)
-	}
+	analysis := s.runAnalyzer(user, alert, observations)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -413,6 +478,31 @@ func (s *Service) Analyze(user authDomain.User, alertID string) (Detail, bool) {
 	s.persistLocked()
 
 	return s.detailLocked(alertID), true
+}
+
+func (s *Service) runAnalyzer(
+	user authDomain.User,
+	alert alertDomain.Alert,
+	observations []alertDomain.AgentActionObservation,
+) alertDomain.AlertAnalysis {
+	analysis := alertDomain.AlertAnalysis{
+		Status:      "failed",
+		Summary:     "当前分析器未初始化，无法生成告警分析结果。",
+		Source:      "go-alert-service",
+		GeneratedAt: time.Now(),
+		Error:       "analyzer unavailable",
+	}
+	if s.analyzer == nil {
+		return analysis
+	}
+	if len(observations) > 0 {
+		if analyzer, ok := s.analyzer.(interface {
+			AnalyzeAlertWithObservations(context.Context, authDomain.User, alertDomain.Alert, []alertDomain.AgentActionObservation) alertDomain.AlertAnalysis
+		}); ok {
+			return analyzer.AnalyzeAlertWithObservations(context.Background(), user, alert, observations)
+		}
+	}
+	return s.analyzer.AnalyzeAlert(context.Background(), user, alert)
 }
 
 func (s *Service) mustIngest(input IngestInput) {

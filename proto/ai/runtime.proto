@@ -30,6 +30,35 @@ message ToolCall {
   string summary = 4;
 }
 
+message AgentPlanStep {
+  string step_id = 1;
+  string phase = 2;
+  string description = 3;
+  string tool_name = 4;
+  string observation = 5;
+  string status = 6;
+}
+
+message PendingAgentAction {
+  string action_id = 1;
+  string action_type = 2;
+  string status = 3;
+  string title = 4;
+  string description = 5;
+  string arguments_json = 6;
+  string risk_level = 7;
+}
+
+message AgentActionObservation {
+  string action_id = 1;
+  string action_type = 2;
+  string status = 3;
+  string title = 4;
+  string result_json = 5;
+  string error = 6;
+  string executed_at = 7;
+}
+
 message ConversationMessage {
   string role = 1;
   string content = 2;
@@ -67,6 +96,7 @@ message AnalyzeAlertRequest {
   string linked_session_id = 12;
   string user_id = 13;
   repeated string user_roles = 14;
+  repeated AgentActionObservation action_observations = 15;
 }
 
 message AnalyzeAlertResponse {
@@ -84,6 +114,8 @@ message AnalyzeAlertResponse {
   string error = 12;
   repeated TraceEvent trace = 13;
   repeated ToolCall tool_calls = 14;
+  repeated AgentPlanStep agent_plan = 15;
+  repeated PendingAgentAction pending_actions = 16;
 }
 
 message RunConversationTurnRequest {
@@ -106,6 +138,8 @@ message RunConversationTurnResponse {
   string status = 5;
   string error = 6;
   repeated TraceEvent trace = 7;
+  repeated AgentPlanStep agent_plan = 8;
+  repeated PendingAgentAction pending_actions = 9;
 }
 
 message HealthRequest {

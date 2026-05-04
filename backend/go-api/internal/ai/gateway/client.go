@@ -29,14 +29,16 @@ type ChatRequest struct {
 }
 
 type ChatResponse struct {
-	Answer        string         `json:"answer"`
-	Citations     []string       `json:"citations"`
-	CitationItems []ChatCitation `json:"citation_items,omitempty"`
-	Route         string         `json:"route,omitempty"`
-	Status        string         `json:"status,omitempty"`
-	Error         string         `json:"error,omitempty"`
-	ToolCalls     []ToolCall     `json:"tool_calls,omitempty"`
-	Trace         []TraceEvent   `json:"trace,omitempty"`
+	Answer         string               `json:"answer"`
+	Citations      []string             `json:"citations"`
+	CitationItems  []ChatCitation       `json:"citation_items,omitempty"`
+	Route          string               `json:"route,omitempty"`
+	Status         string               `json:"status,omitempty"`
+	Error          string               `json:"error,omitempty"`
+	ToolCalls      []ToolCall           `json:"tool_calls,omitempty"`
+	Trace          []TraceEvent         `json:"trace,omitempty"`
+	AgentPlan      []AgentPlanStep      `json:"agent_plan,omitempty"`
+	PendingActions []PendingAgentAction `json:"pending_actions,omitempty"`
 }
 
 type ChatMessage struct {
@@ -77,6 +79,35 @@ type ToolCall struct {
 	Summary       string `json:"summary,omitempty"`
 }
 
+type AgentPlanStep struct {
+	StepID      string `json:"step_id,omitempty"`
+	Phase       string `json:"phase,omitempty"`
+	Description string `json:"description,omitempty"`
+	ToolName    string `json:"tool_name,omitempty"`
+	Observation string `json:"observation,omitempty"`
+	Status      string `json:"status,omitempty"`
+}
+
+type PendingAgentAction struct {
+	ActionID      string `json:"action_id,omitempty"`
+	ActionType    string `json:"action_type,omitempty"`
+	Status        string `json:"status,omitempty"`
+	Title         string `json:"title,omitempty"`
+	Description   string `json:"description,omitempty"`
+	ArgumentsJSON string `json:"arguments_json,omitempty"`
+	RiskLevel     string `json:"risk_level,omitempty"`
+}
+
+type AgentActionObservation struct {
+	ActionID   string `json:"action_id,omitempty"`
+	ActionType string `json:"action_type,omitempty"`
+	Status     string `json:"status,omitempty"`
+	Title      string `json:"title,omitempty"`
+	ResultJSON string `json:"result_json,omitempty"`
+	Error      string `json:"error,omitempty"`
+	ExecutedAt string `json:"executed_at,omitempty"`
+}
+
 type TraceEvent struct {
 	Stage     string   `json:"stage,omitempty"`
 	Message   string   `json:"message,omitempty"`
@@ -86,36 +117,39 @@ type TraceEvent struct {
 }
 
 type AlertAnalysisRequest struct {
-	AlertID         string            `json:"alert_id"`
-	Title           string            `json:"title"`
-	Service         string            `json:"service"`
-	Environment     string            `json:"environment"`
-	Severity        string            `json:"severity"`
-	Source          string            `json:"source"`
-	Summary         string            `json:"summary"`
-	Description     string            `json:"description"`
-	Labels          map[string]string `json:"labels"`
-	TriggeredAt     string            `json:"triggered_at"`
-	LinkedSessionID string            `json:"linked_session_id"`
-	UserID          string            `json:"user_id,omitempty"`
-	UserRoles       []string          `json:"user_roles,omitempty"`
+	AlertID            string                   `json:"alert_id"`
+	Title              string                   `json:"title"`
+	Service            string                   `json:"service"`
+	Environment        string                   `json:"environment"`
+	Severity           string                   `json:"severity"`
+	Source             string                   `json:"source"`
+	Summary            string                   `json:"summary"`
+	Description        string                   `json:"description"`
+	Labels             map[string]string        `json:"labels"`
+	TriggeredAt        string                   `json:"triggered_at"`
+	LinkedSessionID    string                   `json:"linked_session_id"`
+	UserID             string                   `json:"user_id,omitempty"`
+	UserRoles          []string                 `json:"user_roles,omitempty"`
+	ActionObservations []AgentActionObservation `json:"action_observations,omitempty"`
 }
 
 type AlertAnalysisResponse struct {
-	Status             string       `json:"status"`
-	Summary            string       `json:"summary"`
-	SeverityAssessment string       `json:"severity_assessment"`
-	PossibleCauses     []string     `json:"possible_causes"`
-	SuggestedActions   []string     `json:"suggested_actions"`
-	RecommendedTools   []string     `json:"recommended_tools"`
-	KnowledgeQueries   []string     `json:"knowledge_queries"`
-	ToolCalls          []ToolCall   `json:"tool_calls,omitempty"`
-	Workflow           string       `json:"workflow"`
-	Confidence         string       `json:"confidence"`
-	Source             string       `json:"source"`
-	GeneratedAt        string       `json:"generated_at"`
-	Error              string       `json:"error"`
-	Trace              []TraceEvent `json:"trace,omitempty"`
+	Status             string               `json:"status"`
+	Summary            string               `json:"summary"`
+	SeverityAssessment string               `json:"severity_assessment"`
+	PossibleCauses     []string             `json:"possible_causes"`
+	SuggestedActions   []string             `json:"suggested_actions"`
+	RecommendedTools   []string             `json:"recommended_tools"`
+	KnowledgeQueries   []string             `json:"knowledge_queries"`
+	ToolCalls          []ToolCall           `json:"tool_calls,omitempty"`
+	AgentPlan          []AgentPlanStep      `json:"agent_plan,omitempty"`
+	PendingActions     []PendingAgentAction `json:"pending_actions,omitempty"`
+	Workflow           string               `json:"workflow"`
+	Confidence         string               `json:"confidence"`
+	Source             string               `json:"source"`
+	GeneratedAt        string               `json:"generated_at"`
+	Error              string               `json:"error"`
+	Trace              []TraceEvent         `json:"trace,omitempty"`
 }
 
 type RAGIndexChunk struct {
@@ -299,14 +333,16 @@ func (c *HTTPClient) Chat(ctx context.Context, request ChatRequest) (ChatRespons
 	}
 
 	return ChatResponse{
-		Answer:        response.GetAnswer(),
-		Citations:     citations,
-		CitationItems: chatCitationsFromProto(response.GetCitations()),
-		Route:         response.GetRoute(),
-		Status:        response.GetStatus(),
-		Error:         response.GetError(),
-		ToolCalls:     chatToolCallsFromProto(response.GetToolCalls()),
-		Trace:         traceEventsFromProto(response.GetTrace()),
+		Answer:         response.GetAnswer(),
+		Citations:      citations,
+		CitationItems:  chatCitationsFromProto(response.GetCitations()),
+		Route:          response.GetRoute(),
+		Status:         response.GetStatus(),
+		Error:          response.GetError(),
+		ToolCalls:      chatToolCallsFromProto(response.GetToolCalls()),
+		Trace:          traceEventsFromProto(response.GetTrace()),
+		AgentPlan:      agentPlanFromProto(response.GetAgentPlan()),
+		PendingActions: pendingActionsFromProto(response.GetPendingActions(), "session", request.ConversationID),
 	}, nil
 }
 
@@ -324,19 +360,20 @@ func (c *HTTPClient) AnalyzeAlert(ctx context.Context, request AlertAnalysisRequ
 			SessionId: request.LinkedSessionID,
 			UserId:    request.UserID,
 		},
-		AlertId:         request.AlertID,
-		Title:           request.Title,
-		Service:         request.Service,
-		Environment:     request.Environment,
-		Severity:        request.Severity,
-		Source:          request.Source,
-		Summary:         request.Summary,
-		Description:     request.Description,
-		Labels:          mapLabels(request.Labels),
-		TriggeredAt:     request.TriggeredAt,
-		LinkedSessionId: request.LinkedSessionID,
-		UserId:          request.UserID,
-		UserRoles:       append([]string(nil), request.UserRoles...),
+		AlertId:            request.AlertID,
+		Title:              request.Title,
+		Service:            request.Service,
+		Environment:        request.Environment,
+		Severity:           request.Severity,
+		Source:             request.Source,
+		Summary:            request.Summary,
+		Description:        request.Description,
+		Labels:             mapLabels(request.Labels),
+		TriggeredAt:        request.TriggeredAt,
+		LinkedSessionId:    request.LinkedSessionID,
+		UserId:             request.UserID,
+		UserRoles:          append([]string(nil), request.UserRoles...),
+		ActionObservations: actionObservationsToProto(request.ActionObservations),
 	})
 	if err != nil {
 		return AlertAnalysisResponse{}, err
@@ -351,6 +388,8 @@ func (c *HTTPClient) AnalyzeAlert(ctx context.Context, request AlertAnalysisRequ
 		RecommendedTools:   append([]string(nil), response.GetRecommendedTools()...),
 		KnowledgeQueries:   append([]string(nil), response.GetKnowledgeQueries()...),
 		ToolCalls:          toolCallsFromProto(response.GetToolCalls()),
+		AgentPlan:          agentPlanFromProto(response.GetAgentPlan()),
+		PendingActions:     pendingActionsFromProto(response.GetPendingActions(), "alert", request.AlertID),
 		Workflow:           response.GetWorkflow(),
 		Confidence:         confidenceLabel(response.GetConfidence()),
 		Source:             response.GetSource(),
@@ -599,6 +638,89 @@ func traceEventsFromProto(trace []*aipb.TraceEvent) []TraceEvent {
 		})
 	}
 	return result
+}
+
+func agentPlanFromProto(items []*aipb.AgentPlanStep) []AgentPlanStep {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]AgentPlanStep, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		result = append(result, AgentPlanStep{
+			StepID:      item.GetStepId(),
+			Phase:       item.GetPhase(),
+			Description: item.GetDescription(),
+			ToolName:    item.GetToolName(),
+			Observation: item.GetObservation(),
+			Status:      item.GetStatus(),
+		})
+	}
+	return result
+}
+
+func pendingActionsFromProto(items []*aipb.PendingAgentAction, sourceType, sourceID string) []PendingAgentAction {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]PendingAgentAction, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		actionID := strings.TrimSpace(item.GetActionId())
+		if strings.HasPrefix(actionID, "pending-") || actionID == "" {
+			actionID = stableAgentActionID(sourceType, sourceID, item.GetActionType(), len(result)+1)
+		}
+		result = append(result, PendingAgentAction{
+			ActionID:      actionID,
+			ActionType:    item.GetActionType(),
+			Status:        item.GetStatus(),
+			Title:         item.GetTitle(),
+			Description:   item.GetDescription(),
+			ArgumentsJSON: item.GetArgumentsJson(),
+			RiskLevel:     item.GetRiskLevel(),
+		})
+	}
+	return result
+}
+
+func actionObservationsToProto(items []AgentActionObservation) []*aipb.AgentActionObservation {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]*aipb.AgentActionObservation, 0, len(items))
+	for _, item := range items {
+		result = append(result, &aipb.AgentActionObservation{
+			ActionId:   item.ActionID,
+			ActionType: item.ActionType,
+			Status:     item.Status,
+			Title:      item.Title,
+			ResultJson: item.ResultJSON,
+			Error:      item.Error,
+			ExecutedAt: item.ExecutedAt,
+		})
+	}
+	return result
+}
+
+func stableAgentActionID(sourceType, sourceID, actionType string, index int) string {
+	raw := strings.Join([]string{"agent", sourceType, sourceID, actionType, fmt.Sprintf("%d", index)}, "_")
+	normalized := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		default:
+			return '_'
+		}
+	}, raw)
+	return strings.Trim(normalized, "_")
 }
 
 func toolCallsFromProto(items []*aipb.ToolCall) []ToolCall {

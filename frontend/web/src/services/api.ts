@@ -50,6 +50,8 @@ export interface ChatMessage {
   route?: string;
   tool_calls?: ChatToolCall[];
   trace?: ChatTraceEvent[];
+  agent_plan?: AgentPlanStep[];
+  pending_actions?: PendingAgentAction[];
   references?: MessageReference[];
   created_at: string;
 }
@@ -67,6 +69,41 @@ export interface ChatTraceEvent {
   severity?: string;
   timestamp?: string;
   tags?: string[];
+}
+
+export interface AgentPlanStep {
+  step_id?: string;
+  phase?: string;
+  description?: string;
+  tool_name?: string;
+  observation?: string;
+  status?: string;
+}
+
+export interface PendingAgentAction {
+  action_id: string;
+  action_type: string;
+  status: "pending" | "executed" | "failed";
+  title: string;
+  description?: string;
+  arguments_json?: string;
+  risk_level?: "low" | "medium" | "high";
+}
+
+export interface AgentActionRecord {
+  id: string;
+  source_type: string;
+  source_id: string;
+  action_type: string;
+  status: "pending" | "executed" | "failed";
+  title: string;
+  description?: string;
+  arguments_json?: string;
+  risk_level?: "low" | "medium" | "high";
+  result_json?: string;
+  error?: string;
+  created_at: string;
+  executed_at?: string;
 }
 
 export interface ChatMessagePage {
@@ -211,6 +248,8 @@ export interface AlertAnalysis {
   generated_at: string;
   error?: string;
   trace?: ChatTraceEvent[];
+  agent_plan?: AgentPlanStep[];
+  pending_actions?: PendingAgentAction[];
 }
 
 export interface ToolParameter {
@@ -323,6 +362,8 @@ export async function streamSessionMessage(
       route?: string;
       tool_calls?: ChatToolCall[];
       trace?: ChatTraceEvent[];
+      agent_plan?: AgentPlanStep[];
+      pending_actions?: PendingAgentAction[];
       references?: MessageReference[];
     }) => void;
   }
@@ -386,6 +427,8 @@ function parseSSEEvent(
       route?: string;
       tool_calls?: ChatToolCall[];
       trace?: ChatTraceEvent[];
+      agent_plan?: AgentPlanStep[];
+      pending_actions?: PendingAgentAction[];
       references?: MessageReference[];
     }) => void;
   }
@@ -528,6 +571,15 @@ export async function linkAlertSession(alertId: string) {
 export async function analyzeAlert(alertId: string) {
   const response = await http.post<ApiEnvelope<{ alert: AlertItem; records: AlertRecord[] }>>(
     `/api/v1/alerts/${alertId}/analyze`
+  );
+  return response.data;
+}
+
+export async function confirmAgentAction(actionId: string) {
+  const response = await http.post<
+    ApiEnvelope<{ action: AgentActionRecord; alert?: AlertItem; records?: AlertRecord[]; stats?: AlertStats }>
+  >(
+    `/api/v1/agent-actions/${actionId}/confirm`
   );
   return response.data;
 }

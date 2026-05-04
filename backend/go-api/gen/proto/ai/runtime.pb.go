@@ -250,6 +250,274 @@ func (x *ToolCall) GetSummary() string {
 	return ""
 }
 
+type AgentPlanStep struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	StepId        string                 `protobuf:"bytes,1,opt,name=step_id,json=stepId,proto3" json:"step_id,omitempty"`
+	Phase         string                 `protobuf:"bytes,2,opt,name=phase,proto3" json:"phase,omitempty"`
+	Description   string                 `protobuf:"bytes,3,opt,name=description,proto3" json:"description,omitempty"`
+	ToolName      string                 `protobuf:"bytes,4,opt,name=tool_name,json=toolName,proto3" json:"tool_name,omitempty"`
+	Observation   string                 `protobuf:"bytes,5,opt,name=observation,proto3" json:"observation,omitempty"`
+	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentPlanStep) Reset() {
+	*x = AgentPlanStep{}
+	mi := &file_ai_runtime_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentPlanStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentPlanStep) ProtoMessage() {}
+
+func (x *AgentPlanStep) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_runtime_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentPlanStep.ProtoReflect.Descriptor instead.
+func (*AgentPlanStep) Descriptor() ([]byte, []int) {
+	return file_ai_runtime_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AgentPlanStep) GetStepId() string {
+	if x != nil {
+		return x.StepId
+	}
+	return ""
+}
+
+func (x *AgentPlanStep) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *AgentPlanStep) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *AgentPlanStep) GetToolName() string {
+	if x != nil {
+		return x.ToolName
+	}
+	return ""
+}
+
+func (x *AgentPlanStep) GetObservation() string {
+	if x != nil {
+		return x.Observation
+	}
+	return ""
+}
+
+func (x *AgentPlanStep) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+type PendingAgentAction struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActionId      string                 `protobuf:"bytes,1,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	ActionType    string                 `protobuf:"bytes,2,opt,name=action_type,json=actionType,proto3" json:"action_type,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
+	Description   string                 `protobuf:"bytes,5,opt,name=description,proto3" json:"description,omitempty"`
+	ArgumentsJson string                 `protobuf:"bytes,6,opt,name=arguments_json,json=argumentsJson,proto3" json:"arguments_json,omitempty"`
+	RiskLevel     string                 `protobuf:"bytes,7,opt,name=risk_level,json=riskLevel,proto3" json:"risk_level,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PendingAgentAction) Reset() {
+	*x = PendingAgentAction{}
+	mi := &file_ai_runtime_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingAgentAction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingAgentAction) ProtoMessage() {}
+
+func (x *PendingAgentAction) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_runtime_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingAgentAction.ProtoReflect.Descriptor instead.
+func (*PendingAgentAction) Descriptor() ([]byte, []int) {
+	return file_ai_runtime_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PendingAgentAction) GetActionId() string {
+	if x != nil {
+		return x.ActionId
+	}
+	return ""
+}
+
+func (x *PendingAgentAction) GetActionType() string {
+	if x != nil {
+		return x.ActionType
+	}
+	return ""
+}
+
+func (x *PendingAgentAction) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *PendingAgentAction) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *PendingAgentAction) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *PendingAgentAction) GetArgumentsJson() string {
+	if x != nil {
+		return x.ArgumentsJson
+	}
+	return ""
+}
+
+func (x *PendingAgentAction) GetRiskLevel() string {
+	if x != nil {
+		return x.RiskLevel
+	}
+	return ""
+}
+
+type AgentActionObservation struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActionId      string                 `protobuf:"bytes,1,opt,name=action_id,json=actionId,proto3" json:"action_id,omitempty"`
+	ActionType    string                 `protobuf:"bytes,2,opt,name=action_type,json=actionType,proto3" json:"action_type,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
+	ResultJson    string                 `protobuf:"bytes,5,opt,name=result_json,json=resultJson,proto3" json:"result_json,omitempty"`
+	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	ExecutedAt    string                 `protobuf:"bytes,7,opt,name=executed_at,json=executedAt,proto3" json:"executed_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentActionObservation) Reset() {
+	*x = AgentActionObservation{}
+	mi := &file_ai_runtime_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentActionObservation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentActionObservation) ProtoMessage() {}
+
+func (x *AgentActionObservation) ProtoReflect() protoreflect.Message {
+	mi := &file_ai_runtime_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentActionObservation.ProtoReflect.Descriptor instead.
+func (*AgentActionObservation) Descriptor() ([]byte, []int) {
+	return file_ai_runtime_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AgentActionObservation) GetActionId() string {
+	if x != nil {
+		return x.ActionId
+	}
+	return ""
+}
+
+func (x *AgentActionObservation) GetActionType() string {
+	if x != nil {
+		return x.ActionType
+	}
+	return ""
+}
+
+func (x *AgentActionObservation) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *AgentActionObservation) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *AgentActionObservation) GetResultJson() string {
+	if x != nil {
+		return x.ResultJson
+	}
+	return ""
+}
+
+func (x *AgentActionObservation) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *AgentActionObservation) GetExecutedAt() string {
+	if x != nil {
+		return x.ExecutedAt
+	}
+	return ""
+}
+
 type ConversationMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
@@ -263,7 +531,7 @@ type ConversationMessage struct {
 
 func (x *ConversationMessage) Reset() {
 	*x = ConversationMessage{}
-	mi := &file_ai_runtime_proto_msgTypes[3]
+	mi := &file_ai_runtime_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -275,7 +543,7 @@ func (x *ConversationMessage) String() string {
 func (*ConversationMessage) ProtoMessage() {}
 
 func (x *ConversationMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[3]
+	mi := &file_ai_runtime_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -288,7 +556,7 @@ func (x *ConversationMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationMessage.ProtoReflect.Descriptor instead.
 func (*ConversationMessage) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{3}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ConversationMessage) GetRole() string {
@@ -345,7 +613,7 @@ type LinkedAlert struct {
 
 func (x *LinkedAlert) Reset() {
 	*x = LinkedAlert{}
-	mi := &file_ai_runtime_proto_msgTypes[4]
+	mi := &file_ai_runtime_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -357,7 +625,7 @@ func (x *LinkedAlert) String() string {
 func (*LinkedAlert) ProtoMessage() {}
 
 func (x *LinkedAlert) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[4]
+	mi := &file_ai_runtime_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -370,7 +638,7 @@ func (x *LinkedAlert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LinkedAlert.ProtoReflect.Descriptor instead.
 func (*LinkedAlert) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{4}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *LinkedAlert) GetAlertId() string {
@@ -451,28 +719,29 @@ func (x *LinkedAlert) GetLinkedSessionId() string {
 }
 
 type AnalyzeAlertRequest struct {
-	state           protoimpl.MessageState  `protogen:"open.v1"`
-	Metadata        *common.RequestMetadata `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	AlertId         string                  `protobuf:"bytes,2,opt,name=alert_id,json=alertId,proto3" json:"alert_id,omitempty"`
-	Title           string                  `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
-	Service         string                  `protobuf:"bytes,4,opt,name=service,proto3" json:"service,omitempty"`
-	Environment     string                  `protobuf:"bytes,5,opt,name=environment,proto3" json:"environment,omitempty"`
-	Severity        string                  `protobuf:"bytes,6,opt,name=severity,proto3" json:"severity,omitempty"`
-	Source          string                  `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
-	Summary         string                  `protobuf:"bytes,8,opt,name=summary,proto3" json:"summary,omitempty"`
-	Description     string                  `protobuf:"bytes,9,opt,name=description,proto3" json:"description,omitempty"`
-	Labels          []string                `protobuf:"bytes,10,rep,name=labels,proto3" json:"labels,omitempty"`
-	TriggeredAt     string                  `protobuf:"bytes,11,opt,name=triggered_at,json=triggeredAt,proto3" json:"triggered_at,omitempty"`
-	LinkedSessionId string                  `protobuf:"bytes,12,opt,name=linked_session_id,json=linkedSessionId,proto3" json:"linked_session_id,omitempty"`
-	UserId          string                  `protobuf:"bytes,13,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	UserRoles       []string                `protobuf:"bytes,14,rep,name=user_roles,json=userRoles,proto3" json:"user_roles,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state              protoimpl.MessageState    `protogen:"open.v1"`
+	Metadata           *common.RequestMetadata   `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	AlertId            string                    `protobuf:"bytes,2,opt,name=alert_id,json=alertId,proto3" json:"alert_id,omitempty"`
+	Title              string                    `protobuf:"bytes,3,opt,name=title,proto3" json:"title,omitempty"`
+	Service            string                    `protobuf:"bytes,4,opt,name=service,proto3" json:"service,omitempty"`
+	Environment        string                    `protobuf:"bytes,5,opt,name=environment,proto3" json:"environment,omitempty"`
+	Severity           string                    `protobuf:"bytes,6,opt,name=severity,proto3" json:"severity,omitempty"`
+	Source             string                    `protobuf:"bytes,7,opt,name=source,proto3" json:"source,omitempty"`
+	Summary            string                    `protobuf:"bytes,8,opt,name=summary,proto3" json:"summary,omitempty"`
+	Description        string                    `protobuf:"bytes,9,opt,name=description,proto3" json:"description,omitempty"`
+	Labels             []string                  `protobuf:"bytes,10,rep,name=labels,proto3" json:"labels,omitempty"`
+	TriggeredAt        string                    `protobuf:"bytes,11,opt,name=triggered_at,json=triggeredAt,proto3" json:"triggered_at,omitempty"`
+	LinkedSessionId    string                    `protobuf:"bytes,12,opt,name=linked_session_id,json=linkedSessionId,proto3" json:"linked_session_id,omitempty"`
+	UserId             string                    `protobuf:"bytes,13,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	UserRoles          []string                  `protobuf:"bytes,14,rep,name=user_roles,json=userRoles,proto3" json:"user_roles,omitempty"`
+	ActionObservations []*AgentActionObservation `protobuf:"bytes,15,rep,name=action_observations,json=actionObservations,proto3" json:"action_observations,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AnalyzeAlertRequest) Reset() {
 	*x = AnalyzeAlertRequest{}
-	mi := &file_ai_runtime_proto_msgTypes[5]
+	mi := &file_ai_runtime_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -484,7 +753,7 @@ func (x *AnalyzeAlertRequest) String() string {
 func (*AnalyzeAlertRequest) ProtoMessage() {}
 
 func (x *AnalyzeAlertRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[5]
+	mi := &file_ai_runtime_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -497,7 +766,7 @@ func (x *AnalyzeAlertRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnalyzeAlertRequest.ProtoReflect.Descriptor instead.
 func (*AnalyzeAlertRequest) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{5}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AnalyzeAlertRequest) GetMetadata() *common.RequestMetadata {
@@ -598,6 +867,13 @@ func (x *AnalyzeAlertRequest) GetUserRoles() []string {
 	return nil
 }
 
+func (x *AnalyzeAlertRequest) GetActionObservations() []*AgentActionObservation {
+	if x != nil {
+		return x.ActionObservations
+	}
+	return nil
+}
+
 type AnalyzeAlertResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Status             string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -614,13 +890,15 @@ type AnalyzeAlertResponse struct {
 	Error              string                 `protobuf:"bytes,12,opt,name=error,proto3" json:"error,omitempty"`
 	Trace              []*TraceEvent          `protobuf:"bytes,13,rep,name=trace,proto3" json:"trace,omitempty"`
 	ToolCalls          []*ToolCall            `protobuf:"bytes,14,rep,name=tool_calls,json=toolCalls,proto3" json:"tool_calls,omitempty"`
+	AgentPlan          []*AgentPlanStep       `protobuf:"bytes,15,rep,name=agent_plan,json=agentPlan,proto3" json:"agent_plan,omitempty"`
+	PendingActions     []*PendingAgentAction  `protobuf:"bytes,16,rep,name=pending_actions,json=pendingActions,proto3" json:"pending_actions,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *AnalyzeAlertResponse) Reset() {
 	*x = AnalyzeAlertResponse{}
-	mi := &file_ai_runtime_proto_msgTypes[6]
+	mi := &file_ai_runtime_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -632,7 +910,7 @@ func (x *AnalyzeAlertResponse) String() string {
 func (*AnalyzeAlertResponse) ProtoMessage() {}
 
 func (x *AnalyzeAlertResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[6]
+	mi := &file_ai_runtime_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -645,7 +923,7 @@ func (x *AnalyzeAlertResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnalyzeAlertResponse.ProtoReflect.Descriptor instead.
 func (*AnalyzeAlertResponse) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{6}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AnalyzeAlertResponse) GetStatus() string {
@@ -746,6 +1024,20 @@ func (x *AnalyzeAlertResponse) GetToolCalls() []*ToolCall {
 	return nil
 }
 
+func (x *AnalyzeAlertResponse) GetAgentPlan() []*AgentPlanStep {
+	if x != nil {
+		return x.AgentPlan
+	}
+	return nil
+}
+
+func (x *AnalyzeAlertResponse) GetPendingActions() []*PendingAgentAction {
+	if x != nil {
+		return x.PendingActions
+	}
+	return nil
+}
+
 type RunConversationTurnRequest struct {
 	state          protoimpl.MessageState  `protogen:"open.v1"`
 	Metadata       *common.RequestMetadata `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -763,7 +1055,7 @@ type RunConversationTurnRequest struct {
 
 func (x *RunConversationTurnRequest) Reset() {
 	*x = RunConversationTurnRequest{}
-	mi := &file_ai_runtime_proto_msgTypes[7]
+	mi := &file_ai_runtime_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -775,7 +1067,7 @@ func (x *RunConversationTurnRequest) String() string {
 func (*RunConversationTurnRequest) ProtoMessage() {}
 
 func (x *RunConversationTurnRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[7]
+	mi := &file_ai_runtime_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -788,7 +1080,7 @@ func (x *RunConversationTurnRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunConversationTurnRequest.ProtoReflect.Descriptor instead.
 func (*RunConversationTurnRequest) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{7}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *RunConversationTurnRequest) GetMetadata() *common.RequestMetadata {
@@ -855,21 +1147,23 @@ func (x *RunConversationTurnRequest) GetRetrievalLimit() int32 {
 }
 
 type RunConversationTurnResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Answer        string                 `protobuf:"bytes,1,opt,name=answer,proto3" json:"answer,omitempty"`
-	Citations     []*Citation            `protobuf:"bytes,2,rep,name=citations,proto3" json:"citations,omitempty"`
-	ToolCalls     []*ToolCall            `protobuf:"bytes,3,rep,name=tool_calls,json=toolCalls,proto3" json:"tool_calls,omitempty"`
-	Route         string                 `protobuf:"bytes,4,opt,name=route,proto3" json:"route,omitempty"`
-	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
-	Error         string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
-	Trace         []*TraceEvent          `protobuf:"bytes,7,rep,name=trace,proto3" json:"trace,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Answer         string                 `protobuf:"bytes,1,opt,name=answer,proto3" json:"answer,omitempty"`
+	Citations      []*Citation            `protobuf:"bytes,2,rep,name=citations,proto3" json:"citations,omitempty"`
+	ToolCalls      []*ToolCall            `protobuf:"bytes,3,rep,name=tool_calls,json=toolCalls,proto3" json:"tool_calls,omitempty"`
+	Route          string                 `protobuf:"bytes,4,opt,name=route,proto3" json:"route,omitempty"`
+	Status         string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	Error          string                 `protobuf:"bytes,6,opt,name=error,proto3" json:"error,omitempty"`
+	Trace          []*TraceEvent          `protobuf:"bytes,7,rep,name=trace,proto3" json:"trace,omitempty"`
+	AgentPlan      []*AgentPlanStep       `protobuf:"bytes,8,rep,name=agent_plan,json=agentPlan,proto3" json:"agent_plan,omitempty"`
+	PendingActions []*PendingAgentAction  `protobuf:"bytes,9,rep,name=pending_actions,json=pendingActions,proto3" json:"pending_actions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *RunConversationTurnResponse) Reset() {
 	*x = RunConversationTurnResponse{}
-	mi := &file_ai_runtime_proto_msgTypes[8]
+	mi := &file_ai_runtime_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -881,7 +1175,7 @@ func (x *RunConversationTurnResponse) String() string {
 func (*RunConversationTurnResponse) ProtoMessage() {}
 
 func (x *RunConversationTurnResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[8]
+	mi := &file_ai_runtime_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -894,7 +1188,7 @@ func (x *RunConversationTurnResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunConversationTurnResponse.ProtoReflect.Descriptor instead.
 func (*RunConversationTurnResponse) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{8}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RunConversationTurnResponse) GetAnswer() string {
@@ -946,6 +1240,20 @@ func (x *RunConversationTurnResponse) GetTrace() []*TraceEvent {
 	return nil
 }
 
+func (x *RunConversationTurnResponse) GetAgentPlan() []*AgentPlanStep {
+	if x != nil {
+		return x.AgentPlan
+	}
+	return nil
+}
+
+func (x *RunConversationTurnResponse) GetPendingActions() []*PendingAgentAction {
+	if x != nil {
+		return x.PendingActions
+	}
+	return nil
+}
+
 type HealthRequest struct {
 	state         protoimpl.MessageState  `protogen:"open.v1"`
 	Metadata      *common.RequestMetadata `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -955,7 +1263,7 @@ type HealthRequest struct {
 
 func (x *HealthRequest) Reset() {
 	*x = HealthRequest{}
-	mi := &file_ai_runtime_proto_msgTypes[9]
+	mi := &file_ai_runtime_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -967,7 +1275,7 @@ func (x *HealthRequest) String() string {
 func (*HealthRequest) ProtoMessage() {}
 
 func (x *HealthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[9]
+	mi := &file_ai_runtime_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -980,7 +1288,7 @@ func (x *HealthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
 func (*HealthRequest) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{9}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *HealthRequest) GetMetadata() *common.RequestMetadata {
@@ -1003,7 +1311,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_ai_runtime_proto_msgTypes[10]
+	mi := &file_ai_runtime_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1015,7 +1323,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_ai_runtime_proto_msgTypes[10]
+	mi := &file_ai_runtime_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1028,7 +1336,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_ai_runtime_proto_rawDescGZIP(), []int{10}
+	return file_ai_runtime_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *HealthResponse) GetStatus() string {
@@ -1090,7 +1398,35 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12%\n" +
 	"\x0earguments_json\x18\x02 \x01(\tR\rargumentsJson\x12\x18\n" +
 	"\aoutcome\x18\x03 \x01(\tR\aoutcome\x12\x18\n" +
-	"\asummary\x18\x04 \x01(\tR\asummary\"\xb5\x01\n" +
+	"\asummary\x18\x04 \x01(\tR\asummary\"\xb7\x01\n" +
+	"\rAgentPlanStep\x12\x17\n" +
+	"\astep_id\x18\x01 \x01(\tR\x06stepId\x12\x14\n" +
+	"\x05phase\x18\x02 \x01(\tR\x05phase\x12 \n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x1b\n" +
+	"\ttool_name\x18\x04 \x01(\tR\btoolName\x12 \n" +
+	"\vobservation\x18\x05 \x01(\tR\vobservation\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\"\xe8\x01\n" +
+	"\x12PendingAgentAction\x12\x1b\n" +
+	"\taction_id\x18\x01 \x01(\tR\bactionId\x12\x1f\n" +
+	"\vaction_type\x18\x02 \x01(\tR\n" +
+	"actionType\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05title\x18\x04 \x01(\tR\x05title\x12 \n" +
+	"\vdescription\x18\x05 \x01(\tR\vdescription\x12%\n" +
+	"\x0earguments_json\x18\x06 \x01(\tR\rargumentsJson\x12\x1d\n" +
+	"\n" +
+	"risk_level\x18\a \x01(\tR\triskLevel\"\xdc\x01\n" +
+	"\x16AgentActionObservation\x12\x1b\n" +
+	"\taction_id\x18\x01 \x01(\tR\bactionId\x12\x1f\n" +
+	"\vaction_type\x18\x02 \x01(\tR\n" +
+	"actionType\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12\x14\n" +
+	"\x05title\x18\x04 \x01(\tR\x05title\x12\x1f\n" +
+	"\vresult_json\x18\x05 \x01(\tR\n" +
+	"resultJson\x12\x14\n" +
+	"\x05error\x18\x06 \x01(\tR\x05error\x12\x1f\n" +
+	"\vexecuted_at\x18\a \x01(\tR\n" +
+	"executedAt\"\xb5\x01\n" +
 	"\x13ConversationMessage\x12\x12\n" +
 	"\x04role\x18\x01 \x01(\tR\x04role\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12\x1b\n" +
@@ -1110,7 +1446,7 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\x06labels\x18\t \x03(\tR\x06labels\x12!\n" +
 	"\ftriggered_at\x18\n" +
 	" \x01(\tR\vtriggeredAt\x12*\n" +
-	"\x11linked_session_id\x18\v \x01(\tR\x0flinkedSessionId\"\xd0\x03\n" +
+	"\x11linked_session_id\x18\v \x01(\tR\x0flinkedSessionId\"\xa7\x04\n" +
 	"\x13AnalyzeAlertRequest\x12=\n" +
 	"\bmetadata\x18\x01 \x01(\v2!.oncall.common.v1.RequestMetadataR\bmetadata\x12\x19\n" +
 	"\balert_id\x18\x02 \x01(\tR\aalertId\x12\x14\n" +
@@ -1127,7 +1463,8 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\x11linked_session_id\x18\f \x01(\tR\x0flinkedSessionId\x12\x17\n" +
 	"\auser_id\x18\r \x01(\tR\x06userId\x12\x1d\n" +
 	"\n" +
-	"user_roles\x18\x0e \x03(\tR\tuserRoles\"\x9d\x04\n" +
+	"user_roles\x18\x0e \x03(\tR\tuserRoles\x12U\n" +
+	"\x13action_observations\x18\x0f \x03(\v2$.oncall.ai.v1.AgentActionObservationR\x12actionObservations\"\xa4\x05\n" +
 	"\x14AnalyzeAlertResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12/\n" +
@@ -1146,7 +1483,10 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\x05error\x18\f \x01(\tR\x05error\x12.\n" +
 	"\x05trace\x18\r \x03(\v2\x18.oncall.ai.v1.TraceEventR\x05trace\x125\n" +
 	"\n" +
-	"tool_calls\x18\x0e \x03(\v2\x16.oncall.ai.v1.ToolCallR\ttoolCalls\"\x95\x03\n" +
+	"tool_calls\x18\x0e \x03(\v2\x16.oncall.ai.v1.ToolCallR\ttoolCalls\x12:\n" +
+	"\n" +
+	"agent_plan\x18\x0f \x03(\v2\x1b.oncall.ai.v1.AgentPlanStepR\tagentPlan\x12I\n" +
+	"\x0fpending_actions\x18\x10 \x03(\v2 .oncall.ai.v1.PendingAgentActionR\x0ependingActions\"\x95\x03\n" +
 	"\x1aRunConversationTurnRequest\x12=\n" +
 	"\bmetadata\x18\x01 \x01(\v2!.oncall.common.v1.RequestMetadataR\bmetadata\x12\x1d\n" +
 	"\n" +
@@ -1158,7 +1498,7 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\ahistory\x18\x06 \x03(\v2!.oncall.ai.v1.ConversationMessageR\ahistory\x12<\n" +
 	"\flinked_alert\x18\a \x01(\v2\x19.oncall.ai.v1.LinkedAlertR\vlinkedAlert\x12#\n" +
 	"\rallowed_tools\x18\b \x03(\tR\fallowedTools\x12'\n" +
-	"\x0fretrieval_limit\x18\t \x01(\x05R\x0eretrievalLimit\"\x96\x02\n" +
+	"\x0fretrieval_limit\x18\t \x01(\x05R\x0eretrievalLimit\"\x9d\x03\n" +
 	"\x1bRunConversationTurnResponse\x12\x16\n" +
 	"\x06answer\x18\x01 \x01(\tR\x06answer\x124\n" +
 	"\tcitations\x18\x02 \x03(\v2\x16.oncall.ai.v1.CitationR\tcitations\x125\n" +
@@ -1167,7 +1507,10 @@ const file_ai_runtime_proto_rawDesc = "" +
 	"\x05route\x18\x04 \x01(\tR\x05route\x12\x16\n" +
 	"\x06status\x18\x05 \x01(\tR\x06status\x12\x14\n" +
 	"\x05error\x18\x06 \x01(\tR\x05error\x12.\n" +
-	"\x05trace\x18\a \x03(\v2\x18.oncall.ai.v1.TraceEventR\x05trace\"N\n" +
+	"\x05trace\x18\a \x03(\v2\x18.oncall.ai.v1.TraceEventR\x05trace\x12:\n" +
+	"\n" +
+	"agent_plan\x18\b \x03(\v2\x1b.oncall.ai.v1.AgentPlanStepR\tagentPlan\x12I\n" +
+	"\x0fpending_actions\x18\t \x03(\v2 .oncall.ai.v1.PendingAgentActionR\x0ependingActions\"N\n" +
 	"\rHealthRequest\x12=\n" +
 	"\bmetadata\x18\x01 \x01(\v2!.oncall.common.v1.RequestMetadataR\bmetadata\"\xa2\x01\n" +
 	"\x0eHealthResponse\x12\x16\n" +
@@ -1193,45 +1536,53 @@ func file_ai_runtime_proto_rawDescGZIP() []byte {
 	return file_ai_runtime_proto_rawDescData
 }
 
-var file_ai_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_ai_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_ai_runtime_proto_goTypes = []any{
 	(*TraceEvent)(nil),                  // 0: oncall.ai.v1.TraceEvent
 	(*Citation)(nil),                    // 1: oncall.ai.v1.Citation
 	(*ToolCall)(nil),                    // 2: oncall.ai.v1.ToolCall
-	(*ConversationMessage)(nil),         // 3: oncall.ai.v1.ConversationMessage
-	(*LinkedAlert)(nil),                 // 4: oncall.ai.v1.LinkedAlert
-	(*AnalyzeAlertRequest)(nil),         // 5: oncall.ai.v1.AnalyzeAlertRequest
-	(*AnalyzeAlertResponse)(nil),        // 6: oncall.ai.v1.AnalyzeAlertResponse
-	(*RunConversationTurnRequest)(nil),  // 7: oncall.ai.v1.RunConversationTurnRequest
-	(*RunConversationTurnResponse)(nil), // 8: oncall.ai.v1.RunConversationTurnResponse
-	(*HealthRequest)(nil),               // 9: oncall.ai.v1.HealthRequest
-	(*HealthResponse)(nil),              // 10: oncall.ai.v1.HealthResponse
-	(*common.RequestMetadata)(nil),      // 11: oncall.common.v1.RequestMetadata
+	(*AgentPlanStep)(nil),               // 3: oncall.ai.v1.AgentPlanStep
+	(*PendingAgentAction)(nil),          // 4: oncall.ai.v1.PendingAgentAction
+	(*AgentActionObservation)(nil),      // 5: oncall.ai.v1.AgentActionObservation
+	(*ConversationMessage)(nil),         // 6: oncall.ai.v1.ConversationMessage
+	(*LinkedAlert)(nil),                 // 7: oncall.ai.v1.LinkedAlert
+	(*AnalyzeAlertRequest)(nil),         // 8: oncall.ai.v1.AnalyzeAlertRequest
+	(*AnalyzeAlertResponse)(nil),        // 9: oncall.ai.v1.AnalyzeAlertResponse
+	(*RunConversationTurnRequest)(nil),  // 10: oncall.ai.v1.RunConversationTurnRequest
+	(*RunConversationTurnResponse)(nil), // 11: oncall.ai.v1.RunConversationTurnResponse
+	(*HealthRequest)(nil),               // 12: oncall.ai.v1.HealthRequest
+	(*HealthResponse)(nil),              // 13: oncall.ai.v1.HealthResponse
+	(*common.RequestMetadata)(nil),      // 14: oncall.common.v1.RequestMetadata
 }
 var file_ai_runtime_proto_depIdxs = []int32{
 	1,  // 0: oncall.ai.v1.ConversationMessage.citations:type_name -> oncall.ai.v1.Citation
-	11, // 1: oncall.ai.v1.AnalyzeAlertRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
-	0,  // 2: oncall.ai.v1.AnalyzeAlertResponse.trace:type_name -> oncall.ai.v1.TraceEvent
-	2,  // 3: oncall.ai.v1.AnalyzeAlertResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
-	11, // 4: oncall.ai.v1.RunConversationTurnRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
-	3,  // 5: oncall.ai.v1.RunConversationTurnRequest.history:type_name -> oncall.ai.v1.ConversationMessage
-	4,  // 6: oncall.ai.v1.RunConversationTurnRequest.linked_alert:type_name -> oncall.ai.v1.LinkedAlert
-	1,  // 7: oncall.ai.v1.RunConversationTurnResponse.citations:type_name -> oncall.ai.v1.Citation
-	2,  // 8: oncall.ai.v1.RunConversationTurnResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
-	0,  // 9: oncall.ai.v1.RunConversationTurnResponse.trace:type_name -> oncall.ai.v1.TraceEvent
-	11, // 10: oncall.ai.v1.HealthRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
-	0,  // 11: oncall.ai.v1.HealthResponse.trace:type_name -> oncall.ai.v1.TraceEvent
-	5,  // 12: oncall.ai.v1.RuntimeService.AnalyzeAlert:input_type -> oncall.ai.v1.AnalyzeAlertRequest
-	7,  // 13: oncall.ai.v1.RuntimeService.RunConversationTurn:input_type -> oncall.ai.v1.RunConversationTurnRequest
-	9,  // 14: oncall.ai.v1.RuntimeService.Health:input_type -> oncall.ai.v1.HealthRequest
-	6,  // 15: oncall.ai.v1.RuntimeService.AnalyzeAlert:output_type -> oncall.ai.v1.AnalyzeAlertResponse
-	8,  // 16: oncall.ai.v1.RuntimeService.RunConversationTurn:output_type -> oncall.ai.v1.RunConversationTurnResponse
-	10, // 17: oncall.ai.v1.RuntimeService.Health:output_type -> oncall.ai.v1.HealthResponse
-	15, // [15:18] is the sub-list for method output_type
-	12, // [12:15] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	14, // 1: oncall.ai.v1.AnalyzeAlertRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
+	5,  // 2: oncall.ai.v1.AnalyzeAlertRequest.action_observations:type_name -> oncall.ai.v1.AgentActionObservation
+	0,  // 3: oncall.ai.v1.AnalyzeAlertResponse.trace:type_name -> oncall.ai.v1.TraceEvent
+	2,  // 4: oncall.ai.v1.AnalyzeAlertResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
+	3,  // 5: oncall.ai.v1.AnalyzeAlertResponse.agent_plan:type_name -> oncall.ai.v1.AgentPlanStep
+	4,  // 6: oncall.ai.v1.AnalyzeAlertResponse.pending_actions:type_name -> oncall.ai.v1.PendingAgentAction
+	14, // 7: oncall.ai.v1.RunConversationTurnRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
+	6,  // 8: oncall.ai.v1.RunConversationTurnRequest.history:type_name -> oncall.ai.v1.ConversationMessage
+	7,  // 9: oncall.ai.v1.RunConversationTurnRequest.linked_alert:type_name -> oncall.ai.v1.LinkedAlert
+	1,  // 10: oncall.ai.v1.RunConversationTurnResponse.citations:type_name -> oncall.ai.v1.Citation
+	2,  // 11: oncall.ai.v1.RunConversationTurnResponse.tool_calls:type_name -> oncall.ai.v1.ToolCall
+	0,  // 12: oncall.ai.v1.RunConversationTurnResponse.trace:type_name -> oncall.ai.v1.TraceEvent
+	3,  // 13: oncall.ai.v1.RunConversationTurnResponse.agent_plan:type_name -> oncall.ai.v1.AgentPlanStep
+	4,  // 14: oncall.ai.v1.RunConversationTurnResponse.pending_actions:type_name -> oncall.ai.v1.PendingAgentAction
+	14, // 15: oncall.ai.v1.HealthRequest.metadata:type_name -> oncall.common.v1.RequestMetadata
+	0,  // 16: oncall.ai.v1.HealthResponse.trace:type_name -> oncall.ai.v1.TraceEvent
+	8,  // 17: oncall.ai.v1.RuntimeService.AnalyzeAlert:input_type -> oncall.ai.v1.AnalyzeAlertRequest
+	10, // 18: oncall.ai.v1.RuntimeService.RunConversationTurn:input_type -> oncall.ai.v1.RunConversationTurnRequest
+	12, // 19: oncall.ai.v1.RuntimeService.Health:input_type -> oncall.ai.v1.HealthRequest
+	9,  // 20: oncall.ai.v1.RuntimeService.AnalyzeAlert:output_type -> oncall.ai.v1.AnalyzeAlertResponse
+	11, // 21: oncall.ai.v1.RuntimeService.RunConversationTurn:output_type -> oncall.ai.v1.RunConversationTurnResponse
+	13, // 22: oncall.ai.v1.RuntimeService.Health:output_type -> oncall.ai.v1.HealthResponse
+	20, // [20:23] is the sub-list for method output_type
+	17, // [17:20] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_ai_runtime_proto_init() }
@@ -1245,7 +1596,7 @@ func file_ai_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ai_runtime_proto_rawDesc), len(file_ai_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

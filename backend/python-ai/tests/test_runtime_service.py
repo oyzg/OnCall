@@ -128,9 +128,11 @@ class RuntimeServiceTest(unittest.TestCase):
         )
 
         self.assertEqual("ready", response.status)
-        self.assertEqual("router_alert_analysis", response.workflow)
+        self.assertEqual("autonomous_plan_react_alert_analysis", response.workflow)
         self.assertIn("payment-api", response.summary)
         self.assertTrue(response.tool_calls)
+        self.assertTrue(response.agent_plan)
+        self.assertEqual([], list(response.pending_actions))
         self.assertTrue(response.trace)
         self.assertEqual("router", response.trace[0].stage)
         self.assertEqual("alert_analysis", response.trace[-1].stage)
@@ -194,7 +196,10 @@ class RuntimeServiceTest(unittest.TestCase):
         self.assertEqual("ready", response.status)
         self.assertEqual("chat_qa", response.route)
         self.assertIn("reset the cache", response.answer)
-        self.assertEqual([], list(response.tool_calls))
+        self.assertTrue(response.tool_calls)
+        self.assertEqual("knowledge_search", response.tool_calls[0].name)
+        self.assertTrue(response.agent_plan)
+        self.assertEqual([], list(response.pending_actions))
 
     def test_run_conversation_turn_executes_tools_inside_chat_workflow(self) -> None:
         response = self.service.RunConversationTurn(

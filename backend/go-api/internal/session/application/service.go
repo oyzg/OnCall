@@ -292,6 +292,8 @@ func (s *Service) CompleteAssistantReply(
 	route string,
 	toolCalls []domain.ToolCall,
 	trace []domain.TraceEvent,
+	agentPlan []domain.AgentPlanStep,
+	pendingActions []domain.PendingAgentAction,
 ) bool {
 	if s.repo != nil {
 		sessions, err := s.repo.ListSessionsByUser(context.Background(), user.ID, "", 0)
@@ -324,6 +326,8 @@ func (s *Service) CompleteAssistantReply(
 			page.Messages[index].Route = route
 			page.Messages[index].ToolCalls = toolCalls
 			page.Messages[index].Trace = trace
+			page.Messages[index].AgentPlan = agentPlan
+			page.Messages[index].PendingActions = pendingActions
 			page.Messages[index].References = references
 			break
 		}
@@ -356,6 +360,8 @@ func (s *Service) CompleteAssistantReply(
 		messages[index].Route = route
 		messages[index].ToolCalls = toolCalls
 		messages[index].Trace = trace
+		messages[index].AgentPlan = agentPlan
+		messages[index].PendingActions = pendingActions
 		messages[index].References = references
 		break
 	}

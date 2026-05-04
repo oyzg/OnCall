@@ -66,10 +66,17 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 					ToolCalls: []*aipb.ToolCall{
 						{Name: "service_status", ArgumentsJson: `{"service":"payment-api"}`, Outcome: "success", Summary: "payment-api is degraded"},
 					},
-					Workflow:           "alert_analysis",
-					Confidence:         0.9,
-					Source:             "python-ai-runtime",
-					GeneratedAt:        "2026-04-09T10:00:00Z",
+					AgentPlan: []*aipb.AgentPlanStep{
+						{StepId: "step-1", Phase: "plan", Description: "Investigate payment-api blast radius", Status: "completed"},
+						{StepId: "step-2", Phase: "act", ToolName: "service_status", Description: "Check service health", Status: "completed"},
+					},
+					PendingActions: []*aipb.PendingAgentAction{
+						{ActionId: "act-1", ActionType: "update_alert_status", Status: "pending", Title: "Move alert to investigating", ArgumentsJson: `{"alert_id":"alert-1","status":"investigating"}`, RiskLevel: "medium"},
+					},
+					Workflow:    "alert_analysis",
+					Confidence:  0.9,
+					Source:      "python-ai-runtime",
+					GeneratedAt: "2026-04-09T10:00:00Z",
 					Trace: []*aipb.TraceEvent{
 						{Stage: "router", Message: "alert route selected", Severity: "info"},
 						{Stage: "alert_analysis", Message: "generated analysis", Severity: "info"},
@@ -94,6 +101,16 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 		LinkedSessionID: "session-1",
 		UserID:          "user-1",
 		UserRoles:       []string{"oncall", "admin"},
+		ActionObservations: []AgentActionObservation{
+			{
+				ActionID:   "action-1",
+				ActionType: "update_alert_status",
+				Status:     "executed",
+				Title:      "Move alert to investigating",
+				ResultJSON: `{"status":"investigating"}`,
+				ExecutedAt: "2026-04-09T10:01:00Z",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("AnalyzeAlert: %v", err)
@@ -113,6 +130,12 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 	}
 	if len(response.Trace) != 2 || response.Trace[0].Stage != "router" {
 		t.Fatalf("unexpected trace: %#v", response.Trace)
+	}
+	if len(response.AgentPlan) != 2 || response.AgentPlan[0].Phase != "plan" {
+		t.Fatalf("unexpected agent plan: %#v", response.AgentPlan)
+	}
+	if len(response.PendingActions) != 1 || response.PendingActions[0].ActionType != "update_alert_status" {
+		t.Fatalf("unexpected pending actions: %#v", response.PendingActions)
 	}
 
 	if captured == nil {
@@ -138,6 +161,12 @@ func TestAnalyzeAlertMapsRuntimeRequestAndConfidenceLabel(t *testing.T) {
 	}
 	if !reflect.DeepEqual(captured.Labels, []string{"team=payments", "tier=critical"}) {
 		t.Fatalf("unexpected labels: %#v", captured.Labels)
+	}
+	if len(captured.ActionObservations) != 1 || captured.ActionObservations[0].GetActionType() != "update_alert_status" {
+		t.Fatalf("unexpected action observations: %#v", captured.ActionObservations)
+	}
+	if captured.ActionObservations[0].GetResultJson() != `{"status":"investigating"}` {
+		t.Fatalf("unexpected action observation result: %s", captured.ActionObservations[0].GetResultJson())
 	}
 }
 
@@ -195,6 +224,12 @@ func TestChatMapsRuntimeRequestAndResponseFields(t *testing.T) {
 					Error:  "",
 					Trace: []*aipb.TraceEvent{
 						{Stage: "router", Message: "routed to chat", Severity: "info", Timestamp: "2026-04-09T10:00:00Z", Tags: []string{"chat"}},
+					},
+					AgentPlan: []*aipb.AgentPlanStep{
+						{StepId: "step-1", Phase: "plan", Description: "Investigate cache issue", Status: "completed"},
+					},
+					PendingActions: []*aipb.PendingAgentAction{
+						{ActionId: "act-chat-1", ActionType: "append_alert_record", Status: "pending", Title: "Record investigation note", ArgumentsJson: `{"alert_id":"alert-9","comment":"Cache runbook suggested."}`, RiskLevel: "low"},
 					},
 				}, nil
 			},
@@ -259,6 +294,12 @@ func TestChatMapsRuntimeRequestAndResponseFields(t *testing.T) {
 	}
 	if !reflect.DeepEqual(response.Citations, []string{"Cache invalidation runbook", "kb-service", "doc-3"}) {
 		t.Fatalf("unexpected citations: %#v", response.Citations)
+	}
+	if len(response.AgentPlan) != 1 || response.AgentPlan[0].Phase != "plan" {
+		t.Fatalf("unexpected agent plan: %#v", response.AgentPlan)
+	}
+	if len(response.PendingActions) != 1 || response.PendingActions[0].ActionType != "append_alert_record" {
+		t.Fatalf("unexpected pending actions: %#v", response.PendingActions)
 	}
 
 	if captured == nil {

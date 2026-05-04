@@ -54,6 +54,7 @@ class RuntimeService(runtime_pb2_grpc.RuntimeServiceServicer):
         decision = self.router_graph.invoke(request)
         result = self.alert_analysis_graph.invoke(request)
         result.trace = decision.trace + result.trace
+        result.pending_actions = []
         if not result.workflow:
             result.workflow = decision.route or "alert_analysis"
         if not result.source:
@@ -72,6 +73,9 @@ class RuntimeService(runtime_pb2_grpc.RuntimeServiceServicer):
                 status=alert_result.status,
                 answer=alert_result.summary,
                 route=decision.route,
+                tool_calls=alert_result.tool_calls,
+                agent_plan=alert_result.agent_plan,
+                pending_actions=alert_result.pending_actions,
                 trace=decision.trace + alert_result.trace,
             )
             return conversation_result_to_proto(result)

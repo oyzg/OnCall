@@ -225,29 +225,33 @@ func toSessionDomain(model models.Session) sessionDomain.Session {
 
 func toMessageModel(message sessionDomain.Message) *models.Message {
 	return &models.Message{
-		ID:            message.ID,
-		SessionID:     message.SessionID,
-		Role:          message.Role,
-		Content:       message.Content,
-		Status:        message.Status,
-		Route:         message.Route,
-		ToolCallsJSON: mustJSON(message.ToolCalls),
-		TraceJSON:     mustJSON(message.Trace),
-		CreatedAt:     message.CreatedAt,
+		ID:                 message.ID,
+		SessionID:          message.SessionID,
+		Role:               message.Role,
+		Content:            message.Content,
+		Status:             message.Status,
+		Route:              message.Route,
+		ToolCallsJSON:      mustJSON(message.ToolCalls),
+		TraceJSON:          mustJSON(message.Trace),
+		AgentPlanJSON:      mustJSON(message.AgentPlan),
+		PendingActionsJSON: mustJSON(message.PendingActions),
+		CreatedAt:          message.CreatedAt,
 	}
 }
 
 func toMessageDomain(model models.Message) sessionDomain.Message {
 	return sessionDomain.Message{
-		ID:        model.ID,
-		SessionID: model.SessionID,
-		Role:      model.Role,
-		Content:   model.Content,
-		Status:    model.Status,
-		Route:     model.Route,
-		ToolCalls: decodeToolCalls(model.ToolCallsJSON),
-		Trace:     decodeTrace(model.TraceJSON),
-		CreatedAt: model.CreatedAt,
+		ID:             model.ID,
+		SessionID:      model.SessionID,
+		Role:           model.Role,
+		Content:        model.Content,
+		Status:         model.Status,
+		Route:          model.Route,
+		ToolCalls:      decodeToolCalls(model.ToolCallsJSON),
+		Trace:          decodeTrace(model.TraceJSON),
+		AgentPlan:      decodeAgentPlan(model.AgentPlanJSON),
+		PendingActions: decodePendingActions(model.PendingActionsJSON),
+		CreatedAt:      model.CreatedAt,
 	}
 }
 
@@ -286,6 +290,30 @@ func decodeTrace(raw string) []sessionDomain.TraceEvent {
 	}
 
 	var items []sessionDomain.TraceEvent
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+func decodeAgentPlan(raw string) []sessionDomain.AgentPlanStep {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	var items []sessionDomain.AgentPlanStep
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return nil
+	}
+	return items
+}
+
+func decodePendingActions(raw string) []sessionDomain.PendingAgentAction {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+
+	var items []sessionDomain.PendingAgentAction
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return nil
 	}

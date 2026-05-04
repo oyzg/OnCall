@@ -10,9 +10,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
+	agentActionApp "github.com/oyzg/OnCall/backend/go-api/internal/agentaction/application"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/eino"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/gateway"
 	"github.com/oyzg/OnCall/backend/go-api/internal/ai/retrieval"
+	alertApp "github.com/oyzg/OnCall/backend/go-api/internal/alert/application"
+	alertDomain "github.com/oyzg/OnCall/backend/go-api/internal/alert/domain"
 	auditApp "github.com/oyzg/OnCall/backend/go-api/internal/audit/application"
 	authAPI "github.com/oyzg/OnCall/backend/go-api/internal/auth/api"
 	authDomain "github.com/oyzg/OnCall/backend/go-api/internal/auth/domain"
@@ -28,6 +31,8 @@ type Handler struct {
 	retrieval    *retrieval.Service
 	orchestrator eino.Orchestrator
 	audit        *auditApp.Service
+	agentActions *agentActionApp.Service
+	alerts       *alertApp.Service
 }
 
 type createSessionRequest struct {
@@ -39,11 +44,13 @@ type streamMessageRequest struct {
 }
 
 type runtimeReplyResult struct {
-	Content    string
-	References []sessionDomain.Reference
-	Route      string
-	ToolCalls  []sessionDomain.ToolCall
-	Trace      []sessionDomain.TraceEvent
+	Content        string
+	References     []sessionDomain.Reference
+	Route          string
+	ToolCalls      []sessionDomain.ToolCall
+	Trace          []sessionDomain.TraceEvent
+	AgentPlan      []sessionDomain.AgentPlanStep
+	PendingActions []sessionDomain.PendingAgentAction
 }
 
 func NewHandler(
@@ -51,12 +58,16 @@ func NewHandler(
 	retrievalService *retrieval.Service,
 	orchestrator eino.Orchestrator,
 	auditService *auditApp.Service,
+	agentActionService *agentActionApp.Service,
+	alertService *alertApp.Service,
 ) *Handler {
 	return &Handler{
 		service:      service,
 		retrieval:    retrievalService,
 		orchestrator: orchestrator,
 		audit:        auditService,
+		agentActions: agentActionService,
+		alerts:       alertService,
 	}
 }
 
@@ -201,15 +212,19 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		runtimeResult.Route,
 		runtimeResult.ToolCalls,
 		runtimeResult.Trace,
+		runtimeResult.AgentPlan,
+		runtimeResult.PendingActions,
 	)
 
 	writeSSE(c, "done", gin.H{
-		"message_id": assistantMessage.ID,
-		"content":    fullReply.String(),
-		"references": runtimeResult.References,
-		"route":      runtimeResult.Route,
-		"tool_calls": runtimeResult.ToolCalls,
-		"trace":      runtimeResult.Trace,
+		"message_id":      assistantMessage.ID,
+		"content":         fullReply.String(),
+		"references":      runtimeResult.References,
+		"route":           runtimeResult.Route,
+		"tool_calls":      runtimeResult.ToolCalls,
+		"trace":           runtimeResult.Trace,
+		"agent_plan":      runtimeResult.AgentPlan,
+		"pending_actions": runtimeResult.PendingActions,
 	})
 	c.Writer.Flush()
 }
@@ -231,19 +246,23 @@ func (h *Handler) runtimeReply(
 		UserID:         user.ID,
 		UserRoles:      append([]string(nil), user.Roles...),
 		History:        toGatewayHistory(history),
-		AllowedTools:   []string{"knowledge_search", "service_status"},
+		LinkedAlert:    h.linkedAlert(sessionID),
+		AllowedTools:   []string{"knowledge_search", "service_status", "recent_alerts", "platform_overview"},
 		RetrievalLimit: 3,
 	})
 	if err != nil || strings.TrimSpace(response.Answer) == "" {
 		return h.localReply(user, content)
 	}
 
+	pendingActions := h.persistPendingActions(c, "session", sessionID, response.PendingActions)
 	return runtimeReplyResult{
-		Content:    response.Answer,
-		References: toSessionReferencesFromCitations(response.CitationItems),
-		Route:      strings.TrimSpace(response.Route),
-		ToolCalls:  toSessionToolCalls(response.ToolCalls),
-		Trace:      toSessionTrace(response.Trace),
+		Content:        response.Answer,
+		References:     toSessionReferencesFromCitations(response.CitationItems),
+		Route:          strings.TrimSpace(response.Route),
+		ToolCalls:      toSessionToolCalls(response.ToolCalls),
+		Trace:          toSessionTrace(response.Trace),
+		AgentPlan:      toSessionAgentPlan(response.AgentPlan),
+		PendingActions: toSessionPendingActions(pendingActions),
 	}
 }
 
@@ -261,6 +280,34 @@ func (h *Handler) localReply(user authDomain.User, content string) runtimeReplyR
 			},
 		},
 	}
+}
+
+func (h *Handler) persistPendingActions(c *gin.Context, sourceType, sourceID string, actions []gateway.PendingAgentAction) []gateway.PendingAgentAction {
+	if h.agentActions == nil || len(actions) == 0 {
+		return actions
+	}
+	result := make([]gateway.PendingAgentAction, 0, len(actions))
+	for _, action := range actions {
+		created, err := h.agentActions.Create(c.Request.Context(), agentActionApp.CreateInput{
+			ID:            action.ActionID,
+			SourceType:    sourceType,
+			SourceID:      sourceID,
+			ActionType:    action.ActionType,
+			Title:         action.Title,
+			Description:   action.Description,
+			ArgumentsJSON: action.ArgumentsJSON,
+			RiskLevel:     action.RiskLevel,
+		})
+		if err != nil {
+			action.Status = "failed"
+			result = append(result, action)
+			continue
+		}
+		action.ActionID = created.ID
+		action.Status = created.Status
+		result = append(result, action)
+	}
+	return result
 }
 
 func writeSSE(c *gin.Context, event string, payload any) {
@@ -351,6 +398,75 @@ func toSessionTrace(trace []gateway.TraceEvent) []sessionDomain.TraceEvent {
 		})
 	}
 	return items
+}
+
+func toSessionAgentPlan(plan []gateway.AgentPlanStep) []sessionDomain.AgentPlanStep {
+	items := make([]sessionDomain.AgentPlanStep, 0, len(plan))
+	for _, step := range plan {
+		items = append(items, sessionDomain.AgentPlanStep{
+			StepID:      step.StepID,
+			Phase:       step.Phase,
+			Description: step.Description,
+			ToolName:    step.ToolName,
+			Observation: step.Observation,
+			Status:      step.Status,
+		})
+	}
+	return items
+}
+
+func toSessionPendingActions(actions []gateway.PendingAgentAction) []sessionDomain.PendingAgentAction {
+	items := make([]sessionDomain.PendingAgentAction, 0, len(actions))
+	for _, action := range actions {
+		items = append(items, sessionDomain.PendingAgentAction{
+			ActionID:      action.ActionID,
+			ActionType:    action.ActionType,
+			Status:        action.Status,
+			Title:         action.Title,
+			Description:   action.Description,
+			ArgumentsJSON: action.ArgumentsJSON,
+			RiskLevel:     action.RiskLevel,
+		})
+	}
+	return items
+}
+
+func (h *Handler) linkedAlert(sessionID string) *gateway.LinkedAlert {
+	if h.alerts == nil {
+		return nil
+	}
+	alert, ok := h.alerts.FindByLinkedSession(sessionID)
+	if !ok {
+		return nil
+	}
+	return toGatewayLinkedAlert(alert)
+}
+
+func toGatewayLinkedAlert(alert alertDomain.Alert) *gateway.LinkedAlert {
+	return &gateway.LinkedAlert{
+		AlertID:         alert.ID,
+		Title:           alert.Title,
+		Service:         alert.Service,
+		Environment:     alert.Environment,
+		Severity:        alert.Severity,
+		Source:          alert.Source,
+		Summary:         alert.Summary,
+		Description:     alert.Description,
+		Labels:          cloneLabels(alert.Labels),
+		TriggeredAt:     alert.LastTriggeredAt.Format(time.RFC3339),
+		LinkedSessionID: alert.LinkedSessionID,
+	}
+}
+
+func cloneLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(labels))
+	for key, value := range labels {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func toGatewayHistory(messages []sessionDomain.Message) []gateway.ChatMessage {

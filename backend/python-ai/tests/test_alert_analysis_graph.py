@@ -172,6 +172,90 @@ class AlertAnalysisGraphTest(unittest.TestCase):
         tool_messages = [entry.message for entry in response.trace if entry.stage == "tool"]
         self.assertTrue(any("executed" in message for message in tool_messages))
 
+    def test_alert_graph_returns_autonomous_plan_and_pending_actions(self) -> None:
+        graph = build_alert_analysis_graph(
+            AlertAnalysisAgent(
+                llm_client=FakeLLMClient(),
+                rag_service=FakeAlertRAGService(),
+                tool_agent=ToolAgent(llm_client=FakeLLMClient(), tool_gateway=FakeToolGateway()),
+            )
+        )
+
+        response = graph.invoke(
+            runtime_pb2.AnalyzeAlertRequest(
+                metadata=metadata_pb2.RequestMetadata(
+                    request_id="req-alert-autonomous-1",
+                    user_id="user-autonomous-1",
+                    session_id="session-autonomous-1",
+                ),
+                alert_id="alert-autonomous-1",
+                title="Payment API timeout",
+                service="payment-api",
+                environment="prod",
+                severity="P1",
+                source="prometheus",
+                summary="Timeouts increased after deployment.",
+                description="Users are seeing failures on checkout.",
+                labels=["team=payments"],
+                triggered_at="2026-04-09T12:00:00Z",
+                linked_session_id="session-autonomous-1",
+                user_id="user-autonomous-1",
+                user_roles=["ops"],
+            )
+        )
+
+        self.assertGreaterEqual(len(response.agent_plan), 2)
+        self.assertEqual("plan", response.agent_plan[0].phase)
+        self.assertTrue(response.pending_actions)
+        self.assertEqual("update_alert_status", response.pending_actions[0].action_type)
+        self.assertIn(response.pending_actions[0].risk_level, {"low", "medium", "high"})
+
+    def test_alert_graph_observes_confirmed_actions_before_replanning(self) -> None:
+        graph = build_alert_analysis_graph(
+            AlertAnalysisAgent(
+                llm_client=FakeLLMClient(),
+                rag_service=FakeAlertRAGService(),
+                tool_agent=ToolAgent(llm_client=FakeLLMClient(), tool_gateway=FakeToolGateway()),
+            )
+        )
+
+        response = graph.invoke(
+            runtime_pb2.AnalyzeAlertRequest(
+                metadata=metadata_pb2.RequestMetadata(
+                    request_id="req-alert-replan-1",
+                    user_id="user-replan-1",
+                    session_id="session-replan-1",
+                ),
+                alert_id="alert-replan-1",
+                title="Payment API timeout",
+                service="payment-api",
+                environment="prod",
+                severity="P1",
+                source="prometheus",
+                summary="Timeouts increased after deployment.",
+                description="Users are seeing failures on checkout.",
+                labels=["team=payments"],
+                triggered_at="2026-04-09T12:00:00Z",
+                linked_session_id="session-replan-1",
+                user_id="user-replan-1",
+                user_roles=["ops"],
+                action_observations=[
+                    runtime_pb2.AgentActionObservation(
+                        action_id="agent_alert_alert_replan_1_update_alert_status_1",
+                        action_type="update_alert_status",
+                        status="executed",
+                        title="Move alert to investigating",
+                        result_json='{"status":"investigating"}',
+                    )
+                ],
+            )
+        )
+
+        self.assertEqual("observe", response.agent_plan[0].phase)
+        self.assertIn("update_alert_status", response.agent_plan[0].description)
+        self.assertNotIn("update_alert_status", [action.action_type for action in response.pending_actions])
+        self.assertIn("append_alert_record", [action.action_type for action in response.pending_actions])
+
 
 if __name__ == "__main__":
     unittest.main()

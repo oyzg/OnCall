@@ -19,24 +19,34 @@ func NewService(orchestrator eino.Orchestrator) *Service {
 }
 
 func (s *Service) AnalyzeAlert(ctx context.Context, user authDomain.User, alert alertDomain.Alert) alertDomain.AlertAnalysis {
+	return s.AnalyzeAlertWithObservations(ctx, user, alert, nil)
+}
+
+func (s *Service) AnalyzeAlertWithObservations(
+	ctx context.Context,
+	user authDomain.User,
+	alert alertDomain.Alert,
+	observations []alertDomain.AgentActionObservation,
+) alertDomain.AlertAnalysis {
 	if s == nil || s.orchestrator == nil {
 		return fallbackAnalysis(alert)
 	}
 
 	response, err := s.orchestrator.HandleAlertAnalysis(ctx, gateway.AlertAnalysisRequest{
-		AlertID:         alert.ID,
-		Title:           alert.Title,
-		Service:         alert.Service,
-		Environment:     alert.Environment,
-		Severity:        alert.Severity,
-		Source:          alert.Source,
-		Summary:         alert.Summary,
-		Description:     alert.Description,
-		Labels:          alert.Labels,
-		TriggeredAt:     alert.LastTriggeredAt.Format(time.RFC3339),
-		LinkedSessionID: alert.LinkedSessionID,
-		UserID:          user.ID,
-		UserRoles:       append([]string(nil), user.Roles...),
+		AlertID:            alert.ID,
+		Title:              alert.Title,
+		Service:            alert.Service,
+		Environment:        alert.Environment,
+		Severity:           alert.Severity,
+		Source:             alert.Source,
+		Summary:            alert.Summary,
+		Description:        alert.Description,
+		Labels:             alert.Labels,
+		TriggeredAt:        alert.LastTriggeredAt.Format(time.RFC3339),
+		LinkedSessionID:    alert.LinkedSessionID,
+		UserID:             user.ID,
+		UserRoles:          append([]string(nil), user.Roles...),
+		ActionObservations: toGatewayActionObservations(observations),
 	})
 	if err != nil {
 		analysis := fallbackAnalysis(alert)
@@ -66,6 +76,8 @@ func (s *Service) AnalyzeAlert(ctx context.Context, user authDomain.User, alert 
 		RecommendedTools:   append([]string(nil), response.RecommendedTools...),
 		KnowledgeQueries:   append([]string(nil), response.KnowledgeQueries...),
 		ToolCalls:          toAlertToolCalls(response.ToolCalls),
+		AgentPlan:          toAlertAgentPlan(response.AgentPlan),
+		PendingActions:     nil,
 		Workflow:           response.Workflow,
 		Confidence:         response.Confidence,
 		Source:             response.Source,
@@ -73,6 +85,25 @@ func (s *Service) AnalyzeAlert(ctx context.Context, user authDomain.User, alert 
 		Error:              response.Error,
 		Trace:              toAlertTrace(response.Trace),
 	}
+}
+
+func toGatewayActionObservations(items []alertDomain.AgentActionObservation) []gateway.AgentActionObservation {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]gateway.AgentActionObservation, 0, len(items))
+	for _, item := range items {
+		result = append(result, gateway.AgentActionObservation{
+			ActionID:   item.ActionID,
+			ActionType: item.ActionType,
+			Status:     item.Status,
+			Title:      item.Title,
+			ResultJSON: item.ResultJSON,
+			Error:      item.Error,
+			ExecutedAt: item.ExecutedAt,
+		})
+	}
+	return result
 }
 
 func fallbackAnalysis(alert alertDomain.Alert) alertDomain.AlertAnalysis {
@@ -137,6 +168,43 @@ func toAlertToolCalls(items []gateway.ToolCall) []alertDomain.ToolCall {
 			ArgumentsJSON: item.ArgumentsJSON,
 			Outcome:       item.Outcome,
 			Summary:       item.Summary,
+		})
+	}
+	return result
+}
+
+func toAlertAgentPlan(items []gateway.AgentPlanStep) []alertDomain.AgentPlanStep {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]alertDomain.AgentPlanStep, 0, len(items))
+	for _, item := range items {
+		result = append(result, alertDomain.AgentPlanStep{
+			StepID:      item.StepID,
+			Phase:       item.Phase,
+			Description: item.Description,
+			ToolName:    item.ToolName,
+			Observation: item.Observation,
+			Status:      item.Status,
+		})
+	}
+	return result
+}
+
+func toAlertPendingActions(items []gateway.PendingAgentAction) []alertDomain.PendingAgentAction {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]alertDomain.PendingAgentAction, 0, len(items))
+	for _, item := range items {
+		result = append(result, alertDomain.PendingAgentAction{
+			ActionID:      item.ActionID,
+			ActionType:    item.ActionType,
+			Status:        item.Status,
+			Title:         item.Title,
+			Description:   item.Description,
+			ArgumentsJSON: item.ArgumentsJSON,
+			RiskLevel:     item.RiskLevel,
 		})
 	}
 	return result

@@ -123,3 +123,36 @@ func TestAnalyzeAlertPassesUserContextToGateway(t *testing.T) {
 		t.Fatalf("expected runtime trace to be mapped, got %#v", analysis.Trace)
 	}
 }
+
+func TestAnalyzeAlertWithObservationsPassesConfirmedActionContextToGateway(t *testing.T) {
+	orchestrator := &captureOrchestrator{}
+	service := NewService(orchestrator)
+	alert := alertDomain.Alert{
+		ID:              "alert-1",
+		Title:           "Payment API timeout",
+		Service:         "payment-api",
+		Environment:     "prod",
+		Severity:        "P1",
+		Source:          "prometheus",
+		Summary:         "p95 latency increased",
+		Description:     "timeouts are increasing on checkout",
+		LinkedSessionID: "session-1",
+		LastTriggeredAt: time.Date(2026, 4, 9, 10, 0, 0, 0, time.UTC),
+	}
+
+	service.AnalyzeAlertWithObservations(context.Background(), authDomain.User{ID: "user-123"}, alert, []alertDomain.AgentActionObservation{
+		{
+			ActionID:   "action-1",
+			ActionType: "update_alert_status",
+			Status:     "executed",
+			ResultJSON: `{"status":"investigating"}`,
+		},
+	})
+
+	if len(orchestrator.request.ActionObservations) != 1 {
+		t.Fatalf("expected one action observation, got %#v", orchestrator.request.ActionObservations)
+	}
+	if orchestrator.request.ActionObservations[0].ActionType != "update_alert_status" {
+		t.Fatalf("unexpected action observation: %#v", orchestrator.request.ActionObservations[0])
+	}
+}

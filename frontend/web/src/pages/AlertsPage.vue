@@ -160,7 +160,25 @@
                   <span v-if="alertAnalysis.workflow" class="route-chip">Workflow: {{ alertAnalysis.workflow }}</span>
                   <span v-if="alertAnalysis.source" class="route-chip">Source: {{ alertAnalysis.source }}</span>
                   <span v-if="alertAnalysis.tool_calls?.length" class="meta-count">Tools: {{ alertAnalysis.tool_calls.length }}</span>
+                  <span v-if="alertAnalysis.agent_plan?.length" class="meta-count">Plan: {{ alertAnalysis.agent_plan.length }}</span>
                   <span v-if="alertAnalysis.trace?.length" class="meta-count">Trace: {{ alertAnalysis.trace.length }}</span>
+                </div>
+
+                <div v-if="alertAnalysis.agent_plan?.length" class="agent-plan-list">
+                  <div
+                    v-for="step in alertAnalysis.agent_plan"
+                    :key="`${activeAlert?.id || 'alert'}-${step.step_id}-${step.phase}`"
+                    class="agent-plan-step"
+                  >
+                    <header>
+                      <strong>{{ step.phase || "step" }}</strong>
+                      <span>{{ step.status || "completed" }}</span>
+                    </header>
+                    <p>{{ step.description }}</p>
+                    <small v-if="step.tool_name || step.observation">
+                      {{ [step.tool_name ? `Tool: ${step.tool_name}` : "", step.observation].filter(Boolean).join(" · ") }}
+                    </small>
+                  </div>
                 </div>
 
                 <div v-if="alertAnalysis.tool_calls?.length" class="tool-call-list">
@@ -655,12 +673,16 @@ function toolSummary(tool: string) {
   font-size: 12px;
 }
 
+.agent-plan-list,
+.pending-action-list,
 .tool-call-list,
 .trace-list {
   display: grid;
   gap: 10px;
 }
 
+.agent-plan-step,
+.pending-action-card,
 .tool-call-card,
 .trace-item {
   padding: 12px;
@@ -668,6 +690,8 @@ function toolSummary(tool: string) {
   background: rgba(241, 245, 249, 0.9);
 }
 
+.agent-plan-step header,
+.pending-action-card header,
 .tool-call-card header,
 .trace-stage {
   display: flex;
@@ -676,6 +700,8 @@ function toolSummary(tool: string) {
   gap: 12px;
 }
 
+.agent-plan-step p,
+.pending-action-card p,
 .tool-call-card p,
 .trace-item p {
   margin: 8px 0 0;
@@ -683,6 +709,23 @@ function toolSummary(tool: string) {
   color: #334155;
 }
 
+.agent-plan-step small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.pending-action-card {
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  background: rgba(239, 246, 255, 0.92);
+}
+
+.pending-action-card .el-button {
+  margin-top: 10px;
+}
+
+.pending-action-card pre,
 .tool-call-card pre {
   margin: 10px 0 0;
   padding: 10px 12px;

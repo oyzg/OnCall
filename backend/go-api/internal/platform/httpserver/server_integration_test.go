@@ -125,6 +125,38 @@ func TestIntegrationCoreWorkflows(t *testing.T) {
 	if !strings.Contains(analyzeBody, `"trace"`) || !strings.Contains(analyzeBody, `"stage":"router"`) {
 		t.Fatalf("expected runtime trace in analysis result, got %s", analyzeBody)
 	}
+	if strings.Contains(analyzeBody, `"pending_actions"`) {
+		t.Fatalf("alert center analysis must not expose write actions, got %s", analyzeBody)
+	}
+
+	linkedSessionID := linkAlertSession(t, router, token, alertID)
+	sessionStreamBody := request(
+		t,
+		router,
+		http.MethodPost,
+		"/api/v1/sessions/"+linkedSessionID+"/messages/stream",
+		`{"content":"Please continue investigating this alert"}`,
+		token,
+		"application/json",
+		http.StatusOK,
+	)
+	sessionActionID := "integration_session_" + linkedSessionID + "_status"
+	if !strings.Contains(sessionStreamBody, sessionActionID) || !strings.Contains(sessionStreamBody, `"pending_actions"`) {
+		t.Fatalf("expected session center to expose pending write action, got %s", sessionStreamBody)
+	}
+
+	actionID := sessionActionID
+	confirmBody := request(t, router, http.MethodPost, "/api/v1/agent-actions/"+actionID+"/confirm", "", token, "application/json", http.StatusOK)
+	if !strings.Contains(confirmBody, `"status":"executed"`) {
+		t.Fatalf("expected executed agent action, got %s", confirmBody)
+	}
+	if !strings.Contains(confirmBody, "follow-up after confirmed update_alert_status") {
+		t.Fatalf("expected confirm to trigger follow-up agent analysis, got %s", confirmBody)
+	}
+	detailBody := request(t, router, http.MethodGet, "/api/v1/alerts/"+alertID, "", token, "", http.StatusOK)
+	if !strings.Contains(detailBody, "follow-up after confirmed update_alert_status") || !strings.Contains(detailBody, `"phase":"observe"`) {
+		t.Fatalf("expected persisted follow-up agent analysis, got %s", detailBody)
+	}
 
 	toolBody := request(t, router, http.MethodPost, "/api/v1/tools/knowledge_search/call", `{"parameters":{"query":"user-service error ratio increased","limit":2}}`, token, "application/json", http.StatusOK)
 	if !strings.Contains(toolBody, `"answer"`) {
@@ -237,6 +269,23 @@ type fakeRuntimeService struct {
 }
 
 func (fakeRuntimeService) AnalyzeAlert(_ context.Context, request *aipb.AnalyzeAlertRequest) (*aipb.AnalyzeAlertResponse, error) {
+	if observations := request.GetActionObservations(); len(observations) > 0 {
+		return &aipb.AnalyzeAlertResponse{
+			Status:             "ready",
+			Summary:            "follow-up after confirmed " + observations[0].GetActionType(),
+			SeverityAssessment: "confirmed action was observed and the agent replanned",
+			SuggestedActions:   []string{"Continue investigation from confirmed action result."},
+			Workflow:           "autonomous_plan_react_alert_analysis",
+			Confidence:         0.9,
+			Source:             "python-ai-runtime-autonomous-agent",
+			GeneratedAt:        "2026-04-09T10:01:00Z",
+			AgentPlan: []*aipb.AgentPlanStep{
+				{StepId: "step-1", Phase: "observe", Description: "Observe confirmed agent action.", Observation: observations[0].GetResultJson(), Status: "completed"},
+				{StepId: "step-2", Phase: "reflect", Description: "Replan after confirmed action.", Status: "completed"},
+			},
+		}, nil
+	}
+
 	return &aipb.AnalyzeAlertResponse{
 		Status:             "ready",
 		Summary:            "runtime analyzed " + request.GetService(),
@@ -252,14 +301,25 @@ func (fakeRuntimeService) AnalyzeAlert(_ context.Context, request *aipb.AnalyzeA
 		ToolCalls: []*aipb.ToolCall{
 			{Name: "service_status", ArgumentsJson: `{"service":"user-service","environment":"staging"}`, Outcome: "success", Summary: "user-service is degraded in staging"},
 		},
-		Workflow:         "router_alert_analysis",
-		Confidence:       0.92,
-		Source:           "python-ai-runtime-router-alert-graph",
-		GeneratedAt:      "2026-04-09T10:00:00Z",
+		Workflow:    "router_alert_analysis",
+		Confidence:  0.92,
+		Source:      "python-ai-runtime-router-alert-graph",
+		GeneratedAt: "2026-04-09T10:00:00Z",
 		Trace: []*aipb.TraceEvent{
 			{Stage: "router", Message: "alert route selected", Severity: "info"},
 			{Stage: "tool", Message: "executed service_status", Severity: "info"},
 			{Stage: "alert_analysis", Message: "generated structured alert analysis", Severity: "info"},
+		},
+		PendingActions: []*aipb.PendingAgentAction{
+			{
+				ActionId:      "integration_" + request.GetAlertId() + "_status",
+				ActionType:    "update_alert_status",
+				Status:        "pending",
+				Title:         "Move alert to investigating",
+				Description:   "Runtime suggested active investigation.",
+				ArgumentsJson: `{"alert_id":"` + request.GetAlertId() + `","status":"investigating","comment":"Runtime suggested active investigation."}`,
+				RiskLevel:     "medium",
+			},
 		},
 	}, nil
 }
@@ -284,6 +344,31 @@ func (fakeRuntimeService) RunConversationTurn(
 			Trace: []*aipb.TraceEvent{
 				{Stage: "router", Message: "tool route selected", Severity: "info"},
 				{Stage: "tool", Message: "executed service_status", Severity: "info"},
+			},
+		}, nil
+	}
+
+	if request.GetLinkedAlert().GetAlertId() != "" {
+		return &aipb.RunConversationTurnResponse{
+			Answer: "session follow-up for " + request.GetLinkedAlert().GetAlertId(),
+			Route:  "alert_analysis",
+			Status: "ready",
+			AgentPlan: []*aipb.AgentPlanStep{
+				{StepId: "step-1", Phase: "plan", Description: "Plan session-scoped alert action.", Status: "completed"},
+			},
+			PendingActions: []*aipb.PendingAgentAction{
+				{
+					ActionId:      "integration_session_" + request.GetSessionId() + "_status",
+					ActionType:    "update_alert_status",
+					Status:        "pending",
+					Title:         "Move alert to investigating",
+					Description:   "Session center write action.",
+					ArgumentsJson: `{"alert_id":"` + request.GetLinkedAlert().GetAlertId() + `","status":"investigating","comment":"Session center confirmed investigation."}`,
+					RiskLevel:     "medium",
+				},
+			},
+			Trace: []*aipb.TraceEvent{
+				{Stage: "router", Message: "linked alert route selected", Severity: "info"},
 			},
 		}, nil
 	}
@@ -377,6 +462,24 @@ func createSession(t *testing.T, router *gin.Engine, token, title string) string
 	return payload.Data.Session.ID
 }
 
+func linkAlertSession(t *testing.T, router *gin.Engine, token, alertID string) string {
+	t.Helper()
+
+	body := request(t, router, http.MethodPost, "/api/v1/alerts/"+alertID+"/session", "", token, "application/json", http.StatusOK)
+	var payload envelope[struct {
+		Alert struct {
+			LinkedSessionID string `json:"linked_session_id"`
+		} `json:"alert"`
+	}]
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data.Alert.LinkedSessionID == "" {
+		t.Fatalf("expected linked session id, got %s", body)
+	}
+	return payload.Data.Alert.LinkedSessionID
+}
+
 func uploadKnowledgeDocument(t *testing.T, router *gin.Engine, token, title, category, content string) {
 	t.Helper()
 
@@ -413,6 +516,33 @@ func waitForKnowledgeReady(t *testing.T, router *gin.Engine, token string) {
 	}
 
 	t.Fatal("knowledge document did not become ready in time")
+}
+
+func assertPendingActionStatus(t *testing.T, body, actionID, expectedStatus string) {
+	t.Helper()
+
+	var payload envelope[struct {
+		Alert struct {
+			Analysis struct {
+				PendingActions []struct {
+					ActionID string `json:"action_id"`
+					Status   string `json:"status"`
+				} `json:"pending_actions"`
+			} `json:"analysis"`
+		} `json:"alert"`
+	}]
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range payload.Data.Alert.Analysis.PendingActions {
+		if action.ActionID == actionID {
+			if action.Status != expectedStatus {
+				t.Fatalf("expected action %s status %s, got %s in %s", actionID, expectedStatus, action.Status, body)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected action %s in %s", actionID, body)
 }
 
 func firstAlertID(t *testing.T, router *gin.Engine, token string) string {

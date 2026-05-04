@@ -14,15 +14,17 @@ type Session struct {
 }
 
 type Message struct {
-	ID            string    `gorm:"primaryKey;size:64"`
-	SessionID     string    `gorm:"index:idx_messages_session_created,priority:1;size:64;not null"`
-	Role          string    `gorm:"size:16;not null"`
-	Content       string    `gorm:"type:longtext;not null"`
-	Status        string    `gorm:"size:16;not null"`
-	Route         string    `gorm:"size:64"`
-	ToolCallsJSON string    `gorm:"type:longtext"`
-	TraceJSON     string    `gorm:"type:longtext"`
-	CreatedAt     time.Time `gorm:"index:idx_messages_session_created,priority:2;not null"`
+	ID                 string    `gorm:"primaryKey;size:64"`
+	SessionID          string    `gorm:"index:idx_messages_session_created,priority:1;size:64;not null"`
+	Role               string    `gorm:"size:16;not null"`
+	Content            string    `gorm:"type:longtext;not null"`
+	Status             string    `gorm:"size:16;not null"`
+	Route              string    `gorm:"size:64"`
+	ToolCallsJSON      string    `gorm:"type:longtext"`
+	TraceJSON          string    `gorm:"type:longtext"`
+	AgentPlanJSON      string    `gorm:"type:longtext"`
+	PendingActionsJSON string    `gorm:"type:longtext"`
+	CreatedAt          time.Time `gorm:"index:idx_messages_session_created,priority:2;not null"`
 }
 
 type MessageReference struct {
